@@ -7,7 +7,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // ================= 配置 =================
 const CONFIG = {
-    particleCount: 650, 
+    particleCount: 700, // 再稍微增加一点数量
     bucketXmlUrl: "https://storage.googleapis.com/beautiful-days/?prefix=christa/", 
     publicBaseUrl: "https://static.refinefuture.com/", 
     treeHeight: 90,
@@ -17,7 +17,7 @@ const CONFIG = {
         gold: 0xFFD700,
         redShiny: 0xDC143C,
         greenMatte: 0x0B3d0B,
-        whiteCandy: 0xFFFFFF,
+        white: 0xFFFFFF,
         emissiveGold: 0xAA8800,
         emissiveRed: 0x550000
     }
@@ -125,11 +125,8 @@ function onGlobalMouseMove(event) {
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
         if (hit) {
             document.body.style.cursor = 'pointer';
-            // 【修改点】移除了原本在这里的边框高亮代码
-            // 鼠标放上去现在只会变小手，不会有光效变化
         } else {
             document.body.style.cursor = 'default';
-            // 【修改点】移除了原本在这里的恢复亮度的代码
         }
     }
 }
@@ -198,7 +195,6 @@ function initThree() {
     scene.add(centerLight);
     
     const renderPass = new RenderPass(scene, camera);
-    // 辉光参数保持不变，用于其他装饰粒子
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
     bloomPass.threshold = 0.08; bloomPass.strength = 1.8; bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
@@ -216,41 +212,74 @@ function initThree() {
     animate();
 }
 
-// 【核心修改】创建丰富的圣诞元素
+// 【核心修改】创建丰富的圣诞元素组合
 function createChristmasObjects() {
-    // === 1. 定义圣诞风格材质 ===
-    // 金色 (闪亮)
+    // === 1. 定义材质 ===
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.5 });
-    // 红色 (闪亮，用于球和礼物)
     const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.redShiny, metalness: 0.7, roughness: 0.15, emissive: CONFIG.colors.emissiveRed, emissiveIntensity: 0.4 });
-    // 绿色 (哑光，用于礼物)
-    const matGreenMatte = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.greenMatte, metalness: 0.1, roughness: 0.8, emissive: 0x001100, emissiveIntensity: 0.1 });
-    // 糖果白 (高亮发光)
-    const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.whiteCandy, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 0.7 });
+    const matGreenMatte = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.greenMatte, metalness: 0.1, roughness: 0.8 });
+    const matWhiteFelt = new THREE.MeshLambertMaterial({ color: CONFIG.colors.white }); // 白色毛毡
+    const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 0.6 });
 
-    // === 2. 定义几何体形状 ===
+    // === 2. 定义基础几何体 ===
     const sphereGeo = new THREE.SphereGeometry(1.3, 24, 24); // 装饰球
-    const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); // 礼物盒 (稍大)
-    const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); // 糖果棒 (细长)
+    const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); // 礼物盒
+    const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); // 糖果棒
+    const starGeo = new THREE.OctahedronGeometry(1.8); // 星星 (八面体)
 
-    // === 3. 生成装饰粒子 ===
+    // === 3. 定义组合体几何体 (帽和袜) ===
+    const hatConeGeo = new THREE.ConeGeometry(1.2, 3, 16);
+    const hatBrimGeo = new THREE.TorusGeometry(1.2, 0.3, 12, 24);
+    const stockLegGeo = new THREE.CylinderGeometry(0.8, 0.8, 2.5, 12);
+    const stockFootGeo = new THREE.CylinderGeometry(0.8, 0.9, 1.5, 12);
+
+    // === 4. 生成装饰粒子循环 ===
     for(let i=0; i<CONFIG.particleCount; i++) {
         let mesh;
         const randType = Math.random();
 
-        if (randType < 0.45) {
+        if (randType < 0.30) {
+            // 30% 经典球 (金/红)
             mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
-        } else if (randType < 0.75) {
+        } else if (randType < 0.50) {
+            // 20% 礼物盒 (红/绿)
             mesh = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRedShiny : matGreenMatte);
             mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-        } else {
+        } else if (randType < 0.65) {
+            // 15% 糖果棒
             mesh = new THREE.Mesh(candyGeo, matCandy);
-            mesh.rotation.x = (Math.random() - 0.5) * 0.8;
-            mesh.rotation.z = (Math.random() - 0.5) * 0.8;
-            mesh.rotation.y = Math.random() * Math.PI;
+            mesh.rotation.set((Math.random()-0.5),(Math.random()-0.5), Math.random()*Math.PI);
+        } else if (randType < 0.80) {
+            // 15% 星星 (金色)
+            mesh = new THREE.Mesh(starGeo, matGold);
+            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+        } else if (randType < 0.90) {
+            // 10% 圣诞帽 (组合体)
+            mesh = new THREE.Group();
+            const cone = new THREE.Mesh(hatConeGeo, matRedShiny);
+            const brim = new THREE.Mesh(hatBrimGeo, matWhiteFelt);
+            brim.position.y = -1.5;
+            brim.rotation.x = Math.PI / 2;
+            mesh.add(cone); mesh.add(brim);
+            // 稍微随机倾斜
+            mesh.rotation.z = (Math.random() - 0.5) * 0.5;
+        } else {
+            // 10% 圣诞袜 (组合体 - 简易L型)
+            mesh = new THREE.Group();
+            const leg = new THREE.Mesh(stockLegGeo, matRedShiny);
+            const foot = new THREE.Mesh(stockFootGeo, matRedShiny);
+            foot.rotation.x = Math.PI / 2;
+            foot.position.set(0, -1.25, 0.5);
+            const cuff = new THREE.Mesh(hatBrimGeo, matWhiteFelt);
+            cuff.position.y = 1.25;
+            cuff.rotation.x = Math.PI / 2;
+            cuff.scale.set(0.8, 0.8, 0.8);
+            mesh.add(leg); mesh.add(foot); mesh.add(cuff);
+            mesh.rotation.set(Math.random()*0.5, Math.random()*Math.PI, 0);
         }
         
-        const scaleVar = 0.8 + Math.random() * 0.4;
+        // 随机缩放，增加多样性
+        const scaleVar = 0.7 + Math.random() * 0.5;
         mesh.scale.set(scaleVar, scaleVar, scaleVar);
 
         initParticle(mesh, 'DECOR', i);
@@ -258,17 +287,13 @@ function createChristmasObjects() {
         particles.push(mesh);
     }
 
-    // === 照片卡片 ===
+    // === 照片卡片 (无发光边框) ===
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.5); 
-    
-    // 【修改点】重新定义边框材质，使其不发光
+    // 不发光的金属材质
     const borderMat = new THREE.MeshPhysicalMaterial({
-        color: CONFIG.colors.gold, // 依然是金色
-        metalness: 0.8,           // 金属质感
-        roughness: 0.3,           // 稍微粗糙一点，自然反光
-        emissive: 0x000000,       // 发光颜色为黑
-        emissiveIntensity: 0.0    // 发光强度为0，彻底关闭自发光
+        color: CONFIG.colors.gold, metalness: 0.8, roughness: 0.3,
+        emissive: 0x000000, emissiveIntensity: 0.0
     });
     
     imageList.forEach((filename, i) => {
@@ -393,8 +418,13 @@ function updateLogic() {
         else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
                 tPos.set(0, 0, CONFIG.camZ - 40); 
-                mesh.lookAt(camera.position); 
-                mesh.rotation.set(0,0,0);
+                mesh.lookAt(camera.position);
+                // 如果是组合体（帽/袜），保持直立，不随相机倾斜
+                if (mesh.isGroup) {
+                    mesh.rotation.set(0, 0, mesh.rotation.z); 
+                } else {
+                     mesh.rotation.set(0,0,0);
+                }
                 tScale.multiplyScalar(3.5); 
             } else {
                 tPos.copy(data.explodePos).multiplyScalar(2.0); 
