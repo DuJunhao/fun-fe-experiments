@@ -3,15 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR 素材选择器</title>
+    <title>圣诞树手势 AR (最终版)</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
         
-        /* 模拟 AR 画布 */
+        /* 摄像头画面和画布重叠 */
+        video { display: none; }
         canvas { 
-            display: block; 
-            width: 100vw; 
-            height: 100vh; 
+            position: absolute; 
+            width: 100%; 
+            height: 100%; 
+            transform: scaleX(-1); /* 镜像翻转，符合镜子直觉 */
         }
 
         /* 底部素材库样式 */
@@ -21,10 +27,10 @@
             left: 0;
             width: 100%;
             height: 100px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.6);
             display: flex;
             align-items: center;
-            overflow-x: auto; /* 允许横向滚动 */
+            overflow-x: auto;
             padding: 0 10px;
             box-sizing: border-box;
             z-index: 100;
@@ -39,132 +45,254 @@
             cursor: pointer;
             border: 3px solid transparent;
             transition: all 0.2s;
-            flex-shrink: 0; /* 防止图片被挤压 */
+            flex-shrink: 0;
         }
 
-        .gallery-item:hover {
-            transform: scale(1.05);
-        }
-
-        /* 选中态高亮 */
-        .gallery-item.selected {
-            border-color: #ffd700; /* 金色边框 */
-        }
+        .gallery-item:hover { transform: scale(1.05); }
+        .gallery-item.selected { border-color: #ffd700; }
         
-        #loading-text {
+        #loading-text { color: white; width: 100%; text-align: center; }
+        
+        /* 简单的操作提示 */
+        #instruction {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) scaleX(-1); /* 文字不想被镜像翻转，所以反反转 */
             color: white;
-            font-size: 14px;
-            width: 100%;
-            text-align: center;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 20px;
+            pointer-events: none;
+            z-index: 50;
         }
     </style>
 </head>
 <body>
 
+    <div id="instruction">☝️单手捏合拖动 | 👐双手捏合缩放</div>
+
+    <video id="input_video"></video>
     <canvas id="output_canvas"></canvas>
 
     <div id="gallery-container">
-        <div id="loading-text">正在加载云端素材...</div>
+        <div id="loading-text">正在从云端加载素材...</div>
     </div>
 
-    <script>
-        // --- 1. 简单的 Canvas 渲染逻辑 (用来模拟你的 AR 效果) ---
-        const canvas = document.getElementById('output_canvas');
-        const ctx = canvas.getContext('2d');
+<script>
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    
+    // --- 1. 图片状态管理 ---
+    let imgObj = new Image();
+    // 默认空图，等用户点选
+    imgObj.src = ""; 
+    
+    let imgState = {
+        x: 0.5, // 屏幕中心 (0-1)
+        y: 0.5,
+        scale: 0.3,
+        aspectRatio: 1
+    };
+
+    // --- 2. 核心逻辑：计算距离 ---
+    function getDistance(p1, p2) {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+
+    // --- 3. 绘制圣诞树函数 ---
+    function drawTree(ctx, width, height) {
+        ctx.save();
+        ctx.fillStyle = "#2E8B57"; // 森林绿
         
-        // 设置画布大小
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-
-        // 当前选中的 AR 贴图对象
-        let currentAsset = new Image();
-        // 默认给个空图或者加载提示图
-        currentAsset.src = ''; 
+        // 树冠 (三层三角形)
+        const levels = 3;
+        const centerX = width * 0.5; // 居中
         
-        // 简单的绘制循环 (你可以替换成你的 MediaPipe 逻辑)
-        function drawLoop() {
-            // 清空画布
-            ctx.fillStyle = "#333";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // 简单的阴影效果
+        ctx.shadowColor = "rgba(0,0,0,0.5)";
+        ctx.shadowBlur = 10;
 
-            // 绘制文字提示
-            ctx.fillStyle = "white";
-            ctx.font = "20px Arial";
-            ctx.fillText("这里是 AR 摄像头画面区域", 50, 50);
-
-            // 如果有选中的素材，画在屏幕中间
-            if (currentAsset.src && currentAsset.complete) {
-                const size = 200;
-                ctx.drawImage(currentAsset, 
-                    (canvas.width - size) / 2, 
-                    (canvas.height - size) / 2, 
-                    size, size
-                );
-                ctx.fillText("当前选中的素材:", (canvas.width - size) / 2, (canvas.height - size) / 2 - 20);
-            }
-            requestAnimationFrame(drawLoop);
+        for(let i=0; i<levels; i++) {
+            ctx.beginPath();
+            // 计算每一层的位置
+            const yStart = height * 0.2 + (i * height * 0.15);
+            const w = width * (0.15 + i * 0.1); // 越往下越宽
+            
+            ctx.moveTo(centerX, yStart);
+            ctx.lineTo(centerX - w, yStart + height * 0.25);
+            ctx.lineTo(centerX + w, yStart + height * 0.25);
+            ctx.fill();
         }
-        drawLoop();
+        
+        // 树干
+        ctx.fillStyle = "#8B4513"; // 棕色
+        ctx.fillRect(centerX - width*0.04, height * 0.75, width*0.08, height*0.15);
+        
+        // 树顶星星
+        ctx.fillStyle = "gold";
+        ctx.beginPath();
+        ctx.arc(centerX, height * 0.18, width * 0.03, 0, Math.PI * 2);
+        ctx.fill();
 
-        // --- 2. 核心逻辑：从后端获取 Bucket 图片 ---
-        async function loadGallery() {
-            const galleryContainer = document.getElementById('gallery-container');
+        ctx.restore();
+    }
 
-            try {
-                // 请求后端接口
-                const response = await fetch('/api/images');
-                const images = await response.json();
+    // --- 4. MediaPipe 每一帧的回调 ---
+    function onResults(results) {
+        // 设置画布尺寸铺满全屏
+        canvasElement.width = window.innerWidth;
+        canvasElement.height = window.innerHeight;
+        
+        // A. 绘制摄像头背景
+        canvasCtx.save();
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+        
+        // B. 绘制圣诞树 (固定在背景上)
+        drawTree(canvasCtx, canvasElement.width, canvasElement.height);
 
-                // 清空“加载中”提示
-                galleryContainer.innerHTML = '';
+        // C. 处理手势逻辑
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            let pinchHands = [];
 
-                if (images.error) {
-                    throw new Error(images.error);
+            for (const landmarks of results.multiHandLandmarks) {
+                // 绘制手部骨骼 (可选，方便调试)
+                // drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 1});
+                
+                // 关键点：4(拇指尖), 8(食指尖)
+                const thumb = landmarks[4];
+                const index = landmarks[8];
+                const distance = getDistance(thumb, index);
+
+                // 捏合判定 (距离小于 0.05 算捏合)
+                const isPinching = distance < 0.05;
+                
+                // 计算两指中心点
+                const centerPoint = { x: (thumb.x + index.x)/2, y: (thumb.y + index.y)/2 };
+                
+                if (isPinching) {
+                    // 视觉反馈：在指尖画个红点
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(centerPoint.x * canvasElement.width, centerPoint.y * canvasElement.height, 10, 0, 2 * Math.PI);
+                    canvasCtx.fillStyle = "rgba(255, 0, 0, 0.7)";
+                    canvasCtx.fill();
+                    pinchHands.push(centerPoint);
                 }
+            }
 
-                if (images.length === 0) {
-                    galleryContainer.innerHTML = '<div id="loading-text">Bucket 里没有图片</div>';
-                    return;
-                }
-
-                // 遍历图片并创建 DOM 元素
-                images.forEach((imgData, index) => {
-                    const imgEl = document.createElement('img');
-                    imgEl.src = imgData.url;
-                    imgEl.className = 'gallery-item';
-                    imgEl.title = imgData.name;
-
-                    // 点击事件
-                    imgEl.onclick = () => {
-                        console.log("切换素材为:", imgData.name);
-                        
-                        // A. 视觉反馈：处理边框高亮
-                        document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('selected'));
-                        imgEl.classList.add('selected');
-
-                        // B. 逻辑反馈：更新 AR 用的图片对象
-                        // 注意：这里要把 crossorigin 设为 anonymous，防止画布污染
-                        currentAsset.crossOrigin = "Anonymous";
-                        currentAsset.src = imgData.url;
-                    };
-
-                    // 默认选中第一张
-                    if (index === 0) {
-                        imgEl.click();
-                    }
-
-                    galleryContainer.appendChild(imgEl);
-                });
-
-            } catch (err) {
-                console.error(err);
-                galleryContainer.innerHTML = `<div id="loading-text" style="color:red">加载失败: ${err.message}</div>`;
+            // 交互逻辑
+            if (pinchHands.length === 1) {
+                // 单手捏合 -> 移动图片
+                imgState.x = pinchHands[0].x; 
+                imgState.y = pinchHands[0].y;
+            } else if (pinchHands.length === 2) {
+                // 双手捏合 -> 缩放图片
+                const dist = getDistance(pinchHands[0], pinchHands[1]);
+                // 简单的缩放映射
+                imgState.scale = Math.max(0.1, dist * 2.5); 
+                // 位置设为两手中心
+                imgState.x = (pinchHands[0].x + pinchHands[1].x) / 2;
+                imgState.y = (pinchHands[0].y + pinchHands[1].y) / 2;
             }
         }
 
-        // 页面加载完毕后执行
-        loadGallery();
+        // D. 绘制选中的图片 (如果有)
+        // 增加 naturalWidth 检查，防止 CORS 失败的图片导致报错
+        if(imgObj.src && imgObj.complete && imgObj.naturalWidth !== 0) {
+            if (imgObj.width && imgObj.height) {
+                imgState.aspectRatio = imgObj.width / imgObj.height;
+            }
+            
+            const drawW = canvasElement.width * imgState.scale;
+            const drawH = drawW / imgState.aspectRatio;
+            
+            // 坐标中心对齐
+            const drawX = imgState.x * canvasElement.width - drawW / 2;
+            const drawY = imgState.y * canvasElement.height - drawH / 2;
 
-    </script>
+            canvasCtx.drawImage(imgObj, drawX, drawY, drawW, drawH);
+            
+            // 加个金色相框
+            canvasCtx.strokeStyle = "gold";
+            canvasCtx.lineWidth = 5;
+            canvasCtx.strokeRect(drawX, drawY, drawW, drawH);
+        }
+        
+        canvasCtx.restore();
+    }
+
+    // --- 5. 初始化 MediaPipe Hands ---
+    const hands = new Hands({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+
+    hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(onResults);
+
+    // 启动摄像头
+    const camera = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({image: videoElement});
+        },
+        width: 1280,
+        height: 720
+    });
+    camera.start();
+
+    // --- 6. 加载云端素材库 (带防缓存修复) ---
+    async function loadGallery() {
+        const galleryContainer = document.getElementById('gallery-container');
+        try {
+            // 请求 Node.js 接口获取图片列表
+            const res = await fetch('/api/images');
+            const images = await res.json();
+            
+            galleryContainer.innerHTML = ''; // 清空 loading
+
+            if (images.length === 0) {
+                galleryContainer.innerHTML = '<div id="loading-text">没有图片</div>';
+                return;
+            }
+
+            images.forEach((imgData, index) => {
+                const imgEl = document.createElement('img');
+                // 缩略图可以直接用
+                imgEl.src = imgData.url;
+                imgEl.className = 'gallery-item';
+                
+                imgEl.onclick = () => {
+                    console.log("切换素材:", imgData.name);
+                    document.querySelectorAll('.gallery-item').forEach(e => e.classList.remove('selected'));
+                    imgEl.classList.add('selected');
+
+                    // ⚡️ 核心修复：
+                    // 1. 设置 crossOrigin 申请跨域
+                    // 2. 加时间戳参数 ?t=xxx 绕过浏览器缓存，强制请求带 CORS 头的图片
+                    imgObj.crossOrigin = "Anonymous";
+                    imgObj.src = imgData.url + "?t=" + new Date().getTime();
+                };
+
+                // 默认选中第一张
+                if (index === 0) imgEl.click();
+                galleryContainer.appendChild(imgEl);
+            });
+
+        } catch (err) {
+            console.error(err);
+            galleryContainer.innerHTML = '<div id="loading-text">素材加载失败</div>';
+        }
+    }
+
+    loadGallery();
+
+</script>
+
 </body>
 </html>
