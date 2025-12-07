@@ -7,7 +7,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // ================= 配置 =================
 const CONFIG = {
-    particleCount: 700, // 再稍微增加一点数量
+    particleCount: 700, 
     bucketXmlUrl: "https://storage.googleapis.com/beautiful-days/?prefix=christa/", 
     publicBaseUrl: "https://static.refinefuture.com/", 
     treeHeight: 90,
@@ -15,6 +15,7 @@ const CONFIG = {
     camZ: 120,
     colors: { 
         gold: 0xFFD700,
+        darkGold: 0xB8860B, // 【新增】暗金色，用于不发光的边框
         redShiny: 0xDC143C,
         greenMatte: 0x0B3d0B,
         white: 0xFFFFFF,
@@ -51,7 +52,7 @@ function createTextTexture(text) {
     canvas.width = 512; canvas.height = 680;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0,0,512,680);
-    ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 10; ctx.strokeRect(20,20,472,640);
+    ctx.strokeStyle = '#8a6642'; ctx.lineWidth = 10; // 边框颜色也调暗
     ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#d4af37'; ctx.textAlign = 'center';
     ctx.fillText(text, 256, 340);
     return new THREE.CanvasTexture(canvas);
@@ -183,7 +184,8 @@ function initThree() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2; 
+    // 【修改】稍微降低全局曝光，防止过曝
+    renderer.toneMappingExposure = 1.0; 
     container.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0x111111, 1);
@@ -195,8 +197,12 @@ function initThree() {
     scene.add(centerLight);
     
     const renderPass = new RenderPass(scene, camera);
+    // 【核心修改】大幅提高辉光阈值(threshold)，从0.08提到0.3
+    // 这样只有真正发光的物体才会起辉光，普通金属反射不会了
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.08; bloomPass.strength = 1.8; bloomPass.radius = 0.5;
+    bloomPass.threshold = 0.3; 
+    bloomPass.strength = 1.8; 
+    bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
@@ -212,20 +218,21 @@ function initThree() {
     animate();
 }
 
-// 【核心修改】创建丰富的圣诞元素组合
+// ================= 4. 创建丰富的圣诞元素组合 =================
 function createChristmasObjects() {
     // === 1. 定义材质 ===
+    // 发光粒子的材质保持高亮
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.5 });
     const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.redShiny, metalness: 0.7, roughness: 0.15, emissive: CONFIG.colors.emissiveRed, emissiveIntensity: 0.4 });
     const matGreenMatte = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.greenMatte, metalness: 0.1, roughness: 0.8 });
-    const matWhiteFelt = new THREE.MeshLambertMaterial({ color: CONFIG.colors.white }); // 白色毛毡
+    const matWhiteFelt = new THREE.MeshLambertMaterial({ color: CONFIG.colors.white }); 
     const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 0.6 });
 
     // === 2. 定义基础几何体 ===
-    const sphereGeo = new THREE.SphereGeometry(1.3, 24, 24); // 装饰球
-    const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); // 礼物盒
-    const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); // 糖果棒
-    const starGeo = new THREE.OctahedronGeometry(1.8); // 星星 (八面体)
+    const sphereGeo = new THREE.SphereGeometry(1.3, 24, 24); 
+    const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); 
+    const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); 
+    const starGeo = new THREE.OctahedronGeometry(1.8); 
 
     // === 3. 定义组合体几何体 (帽和袜) ===
     const hatConeGeo = new THREE.ConeGeometry(1.2, 3, 16);
@@ -239,46 +246,34 @@ function createChristmasObjects() {
         const randType = Math.random();
 
         if (randType < 0.30) {
-            // 30% 经典球 (金/红)
             mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
         } else if (randType < 0.50) {
-            // 20% 礼物盒 (红/绿)
             mesh = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRedShiny : matGreenMatte);
             mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
         } else if (randType < 0.65) {
-            // 15% 糖果棒
             mesh = new THREE.Mesh(candyGeo, matCandy);
             mesh.rotation.set((Math.random()-0.5),(Math.random()-0.5), Math.random()*Math.PI);
         } else if (randType < 0.80) {
-            // 15% 星星 (金色)
             mesh = new THREE.Mesh(starGeo, matGold);
             mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
         } else if (randType < 0.90) {
-            // 10% 圣诞帽 (组合体)
             mesh = new THREE.Group();
             const cone = new THREE.Mesh(hatConeGeo, matRedShiny);
             const brim = new THREE.Mesh(hatBrimGeo, matWhiteFelt);
-            brim.position.y = -1.5;
-            brim.rotation.x = Math.PI / 2;
+            brim.position.y = -1.5; brim.rotation.x = Math.PI / 2;
             mesh.add(cone); mesh.add(brim);
-            // 稍微随机倾斜
             mesh.rotation.z = (Math.random() - 0.5) * 0.5;
         } else {
-            // 10% 圣诞袜 (组合体 - 简易L型)
             mesh = new THREE.Group();
             const leg = new THREE.Mesh(stockLegGeo, matRedShiny);
             const foot = new THREE.Mesh(stockFootGeo, matRedShiny);
-            foot.rotation.x = Math.PI / 2;
-            foot.position.set(0, -1.25, 0.5);
+            foot.rotation.x = Math.PI / 2; foot.position.set(0, -1.25, 0.5);
             const cuff = new THREE.Mesh(hatBrimGeo, matWhiteFelt);
-            cuff.position.y = 1.25;
-            cuff.rotation.x = Math.PI / 2;
-            cuff.scale.set(0.8, 0.8, 0.8);
+            cuff.position.y = 1.25; cuff.rotation.x = Math.PI / 2; cuff.scale.set(0.8, 0.8, 0.8);
             mesh.add(leg); mesh.add(foot); mesh.add(cuff);
             mesh.rotation.set(Math.random()*0.5, Math.random()*Math.PI, 0);
         }
         
-        // 随机缩放，增加多样性
         const scaleVar = 0.7 + Math.random() * 0.5;
         mesh.scale.set(scaleVar, scaleVar, scaleVar);
 
@@ -287,16 +282,25 @@ function createChristmasObjects() {
         particles.push(mesh);
     }
 
-    // === 照片卡片 (无发光边框) ===
+    // === 照片卡片 (核心修改：材质和位置) ===
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.5); 
-    // 不发光的金属材质
+    
+    // 【核心修改】
+    // 1. 使用较暗的金色(darkGold)代替高亮的金色
+    // 2. 增加粗糙度(roughness)到0.4，减少镜面反射
+    // 3. 确保 emissive 是全黑，强度为0
     const borderMat = new THREE.MeshPhysicalMaterial({
-        color: CONFIG.colors.gold, metalness: 0.8, roughness: 0.3,
-        emissive: 0x000000, emissiveIntensity: 0.0
+        color: CONFIG.colors.darkGold, 
+        metalness: 0.7,
+        roughness: 0.4, 
+        emissive: 0x000000,
+        emissiveIntensity: 0.0,
+        clearcoat: 0.0 // 关闭清漆层，进一步减少反光
     });
     
     imageList.forEach((filename, i) => {
+        // 照片本身的材质，使用基础材质，不受光照影响，保证清晰
         const mat = new THREE.MeshBasicMaterial({ map: loadingTex, side: THREE.DoubleSide });
         textureLoader.load(CONFIG.publicBaseUrl + filename, (tex) => {
             tex.colorSpace = THREE.SRGBColorSpace;
@@ -310,6 +314,7 @@ function createChristmasObjects() {
         mesh.userData.idx = i;
 
         const border = new THREE.Mesh(borderGeo, borderMat);
+        // 确保边框在照片后面
         border.position.z = -0.3; 
         mesh.add(border);
         
@@ -378,7 +383,7 @@ function createMerryChristmas() {
     });
 }
 
-// ================= 4. 动画循环 =================
+// ================= 5. 动画循环 =================
 function updateLogic() {
     if (inputState.mouseLockedPhoto) {
         targetState = 'PHOTO';
@@ -419,7 +424,6 @@ function updateLogic() {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
                 tPos.set(0, 0, CONFIG.camZ - 40); 
                 mesh.lookAt(camera.position);
-                // 如果是组合体（帽/袜），保持直立，不随相机倾斜
                 if (mesh.isGroup) {
                     mesh.rotation.set(0, 0, mesh.rotation.z); 
                 } else {
@@ -449,7 +453,7 @@ function onWindowResize() {
     composer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ================= 5. MediaPipe =================
+// ================= 6. MediaPipe =================
 function initMediaPipe() {
     const video = document.getElementById('input_video');
     
