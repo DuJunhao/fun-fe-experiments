@@ -1,64 +1,62 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs'); // 引入文件系统模块
 const { Storage } = require('@google-cloud/storage');
 
 const app = express();
 const port = process.env.PORT || 8080;
-
-// 获取环境变量
 const BUCKET_NAME = process.env.BUCKET_NAME;
 
-// --- 1. 优先处理 API 和 健康检查 (放在最前面) ---
+// --- 🔍 关键调试代码：启动时打印文件列表 ---
+const publicPath = path.join(__dirname, 'public');
+console.log(`[DEBUG] 正在检查静态文件目录: ${publicPath}`);
 
-// 健康检查 (必须在 catch-all 之前)
-app.get('/health', (req, res) => {
-    res.status(200).send('OK');
-});
+if (fs.existsSync(publicPath)) {
+    const files = fs.readdirSync(publicPath);
+    console.log(`[DEBUG] public 文件夹里的文件:`, files); // 看看这里有没有 index.html
+} else {
+    console.error(`[ERROR] 严重错误：容器里找不到 public 文件夹！`);
+    console.error(`[ERROR] 当前目录 (__dirname) 是: ${__dirname}`);
+    console.error(`[ERROR] 当前目录下的所有文件:`, fs.readdirSync(__dirname));
+}
+// ------------------------------------------
 
-// API 接口
+// 1. 健康检查 (最优先)
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
+// 2. 静态资源
+app.use(express.static(publicPath));
+
+// 3. API 接口
 app.get('/api/images', async (req, res) => {
-    // ... 你的 GCS 代码保持不变 ...
+    // ... 保持你之前的逻辑不变 ...
     try {
-        if (!BUCKET_NAME) {
-            return res.status(500).json({ error: '服务端未配置 BUCKET_NAME' });
-        }
+        if (!BUCKET_NAME) return res.status(500).json({ error: 'Bucket未配置' });
         const storage = new Storage();
         const [files] = await storage.bucket(BUCKET_NAME).getFiles();
-        const imageFiles = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name));
-        
-        const assets = await Promise.all(imageFiles.map(async (file) => {
-            const [url] = await file.getSignedUrl({
-                version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000,
-            });
-            return { name: file.name, url: url };
+        const imageFiles = files.filter(f => /\.(jpg|png|gif|webp)$/i.test(f.name));
+        const assets = await Promise.all(imageFiles.map(async f => {
+             const [url] = await f.getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 3600 * 1000 });
+             return { name: f.name, url };
         }));
         res.json(assets);
-    } catch (error) {
-        console.error('API Error:', error);
-        res.status(500).json({ error: error.message });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 4. 兜底路由 (打印详细错误)
+app.get('*', (req, res) => {
+    const indexPath = path.join(publicPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send(`
+            <h1>404 Error</h1>
+            <p>后端服务正常运行，但找不到 index.html</p>
+            <p>Debug info: Public path is ${publicPath}</p>
+        `);
     }
 });
 
-// --- 2. 静态资源托管 ---
-// 确保 Docker 里的路径是对的。__dirname 是 server.js 所在的目录
-app.use(express.static(path.join(__dirname, 'public')));
-
-// --- 3. 兜底路由 (放在最后) ---
-// 任何没被上面捕获的请求，都返回 index.html
-app.get('*', (req, res) => {
-    const indexPath = path.join(__dirname, 'public', 'index.html');
-    
-    // 增加一个简单的错误打印，方便去 Cloud Run 日志排查
-    res.sendFile(indexPath, (err) => {
-        if (err) {
-            console.error("发送 index.html 失败:", err);
-            res.status(404).send("404 Not Found: index.html 丢失或路径错误");
-        }
-    });
-});
-
-// --- 4. 启动服务 ---
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
-    console.log(`Current directory: ${__dirname}`); // 打印一下当前目录，方便调试
 });
