@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+// 新增字体相关导入
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // ================= 配置 =================
 const CONFIG = {
@@ -35,8 +38,7 @@ const inputState = {
     x: 0.5, y: 0.5,
     isFist: false,
     isPinch: false,
-    // 是否通过鼠标强制选中了照片 (鼠标模式专用)
-    mouseLockedPhoto: false, 
+    mouseLockedPhoto: false,
     isActive: false     
 };
 
@@ -75,7 +77,7 @@ async function fetchBucketPhotos() {
     }, 800);
 }
 
-// ================= 2. 交互逻辑 (鼠标) =================
+// ================= 2. 交互逻辑 =================
 function onGlobalMouseMove(event) {
     mouseVector.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouseVector.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -85,7 +87,6 @@ function onGlobalMouseMove(event) {
         inputState.y = event.clientY / window.innerHeight;
     }
     
-    // 只有在没锁定照片时才做射线检测
     if (!inputState.mouseLockedPhoto) {
         checkIntersection();
     }
@@ -93,6 +94,7 @@ function onGlobalMouseMove(event) {
 
 function checkIntersection() {
     raycaster.setFromCamera(mouseVector, camera);
+    // 只检测照片，不检测文字
     const intersects = raycaster.intersectObjects(photos);
 
     if (intersects.length > 0) {
@@ -112,20 +114,25 @@ function checkIntersection() {
 }
 
 function onGlobalMouseDown(event) {
-    // 仅在鼠标模式下或混合模式下处理点击
-    if (event.button === 0) {
+    if (event.button === 0) { // 左键
         if (hoveredPhoto) {
-            // 点击照片 -> 鼠标锁定模式
             inputState.mouseLockedPhoto = true;
             activePhotoIdx = hoveredPhoto.userData.idx;
-            inputState.isFist = false;
-            updateStatusText(`MEMORY SELECTED`);
-        } else if (document.body.dataset.mode === 'mouse') {
-            inputState.isFist = true; // 鼠标长按空白聚合
+            inputState.isFist = false; 
+            updateStatusText(`MEMORY SELECTED`, "#00ffff");
+        } else {
+            if (inputState.mouseLockedPhoto) {
+                inputState.mouseLockedPhoto = false;
+                activePhotoIdx = -1;
+                updateStatusText("GALAXY MODE");
+            } else if (document.body.dataset.mode === 'mouse') {
+                inputState.isFist = true;
+                updateStatusText("FORMING TREE", "#FFD700");
+            }
         }
     }
-    if (event.button === 2) {
-        // 右键 -> 取消锁定
+    
+    if (event.button === 2) { // 右键
         inputState.mouseLockedPhoto = false;
         inputState.isFist = false;
         activePhotoIdx = -1;
@@ -134,14 +141,21 @@ function onGlobalMouseDown(event) {
 }
 
 function onGlobalMouseUp(event) {
-    if (event.button === 0) inputState.isFist = false;
+    if (event.button === 0) {
+        inputState.isFist = false;
+        if (!inputState.mouseLockedPhoto) {
+            updateStatusText("GALAXY MODE");
+        }
+    }
 }
 
 function updateStatusText(text, color = "#fff") {
     const el = document.getElementById('status-text');
-    el.innerText = text;
-    el.style.color = color;
-    el.style.textShadow = color === "#fff" ? "none" : `0 0 15px ${color}`;
+    if(el.innerText !== text) {
+        el.innerText = text;
+        el.style.color = color;
+        el.style.textShadow = color === "#fff" ? "none" : `0 0 15px ${color}`;
+    }
 }
 
 // ================= 3. Three.js 核心 =================
@@ -171,19 +185,104 @@ function initThree() {
     scene.add(centerLight);
     
     const renderPass = new RenderPass(scene, camera);
+    // 增强辉光强度，让文字更闪
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.1; bloomPass.strength = 1.5; bloomPass.radius = 0.5;
+    bloomPass.threshold = 0.05; bloomPass.strength = 2.0; bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
 
     createObjects();
+    // 调用创建文字的函数
+    createText();
     
     window.addEventListener('mousemove', onGlobalMouseMove);
     window.addEventListener('mousedown', onGlobalMouseDown);
     window.addEventListener('mouseup', onGlobalMouseUp);
     window.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('resize', onWindowResize);
+}
+
+// --- 新增：创建高级感 3D 文字 ---
+function createText() {
+    const loader = new FontLoader();
+    // 加载标准字体
+    loader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', function (font) {
+        
+        // 文字材质：高亮金色，带倒角反光
+        const textMat = new THREE.MeshPhysicalMaterial({
+            color: CONFIG.colors.gold,
+            metalness: 1.0,
+            roughness: 0.1,
+            emissive: CONFIG.colors.emissiveGold,
+            emissiveIntensity: 0.8, // 强烈自发光
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.1
+        });
+
+        // 文字配置
+        const textSettings = {
+            font: font,
+            size: 6,
+            height: 1.5, // 厚度
+            curveSegments: 12,
+            bevelEnabled: true, // 启用倒角，增加立体感
+            bevelThickness: 0.3,
+            bevelSize: 0.2,
+            bevelOffset: 0,
+            bevelSegments: 5
+        };
+
+        const merryGeo = new TextGeometry('MERRY', textSettings);
+        const christmasGeo = new TextGeometry('CHRISTMAS', textSettings);
+
+        // 居中几何体
+        merryGeo.computeBoundingBox();
+        christmasGeo.computeBoundingBox();
+        const merryCenter = - 0.5 * ( merryGeo.boundingBox.max.x - merryGeo.boundingBox.min.x );
+        const christmasCenter = - 0.5 * ( christmasGeo.boundingBox.max.x - christmasGeo.boundingBox.min.x );
+
+        const merryMesh = new THREE.Mesh(merryGeo, textMat);
+        merryMesh.position.x = merryCenter;
+        merryMesh.position.y = 5; // MERRY 在上方
+
+        const christmasMesh = new THREE.Mesh(christmasGeo, textMat);
+        christmasMesh.position.x = christmasCenter;
+        christmasMesh.position.y = -5; // CHRISTMAS 在下方
+
+        // 将两行文字组合
+        const textGroup = new THREE.Group();
+        textGroup.add(merryMesh);
+        textGroup.add(christmasMesh);
+
+        // 设置其在树顶的位置
+        const treeTopPos = new THREE.Vector3(0, CONFIG.treeHeight / 2 + 15, 0);
+        // 设置其散开时的位置（随机远方）
+        const explodePos = new THREE.Vector3(
+            (Math.random()-0.5)*CONFIG.explodeRadius*2, 
+            CONFIG.treeHeight + 50, 
+            (Math.random()-0.5)*CONFIG.explodeRadius*2
+        );
+
+        // 赋予 userData，使其参与动画循环
+        textGroup.userData = {
+            type: 'TEXT',
+            treePos: treeTopPos,
+            explodePos: explodePos,
+            rotSpeed: {x:0, y:0.02, z:0}, // 缓慢自转
+            baseScale: new THREE.Vector3(1,1,1),
+            randomPhase: 0
+        };
+        
+        // 初始位置设为散开
+        textGroup.position.copy(explodePos);
+        // 稍微倾斜一点，更有动感
+        textGroup.rotation.x = -Math.PI / 12; 
+
+        scene.add(textGroup);
+        // 加入粒子数组，由 updateLogic 统一管理动画
+        particles.push(textGroup);
+    });
 }
 
 function createObjects() {
@@ -267,30 +366,23 @@ function initParticle(mesh, type, idx) {
     mesh.position.copy(explodePos);
 }
 
-// ================= 4. 状态机 (核心逻辑更新) =================
+// ================= 4. 状态机 =================
 function updateLogic() {
-    // 优先级 1: 鼠标强制锁定
     if (inputState.mouseLockedPhoto) {
         targetState = 'PHOTO';
-    } 
-    // 优先级 2: 手势捏合 (MediaPipe)
-    else if (inputState.isPinch) {
-        // 如果之前不是捏合状态，说明是新的一次捏合，切换照片
+    } else if (inputState.isPinch) {
         if (targetState !== 'PHOTO') {
             activePhotoIdx = (activePhotoIdx + 1) % photos.length; 
         }
         targetState = 'PHOTO';
         updateStatusText("PINCH DETECTED: ZOOM", "#00ffff");
-    } 
-    // 优先级 3: 握拳 / 长按
-    else if (inputState.isFist) {
+    } else if (inputState.isFist) {
         targetState = 'TREE';
         updateStatusText("FORMING TREE", "#FFD700");
-    } 
-    // 优先级 4: 默认散开 (包括松开捏合)
-    else {
+    } else {
         targetState = 'EXPLODE';
-        updateStatusText("GALAXY MODE", "#ff4466");
+        // 如果不是鼠标锁定状态，恢复默认文字
+        if (!inputState.mouseLockedPhoto) updateStatusText("GALAXY MODE");
     }
 
     const time = Date.now() * 0.001;
@@ -318,12 +410,16 @@ function updateLogic() {
             tPos.z += Math.sin(time*0.7 + data.randomPhase)*3;
         }
         else if (targetState === 'PHOTO') {
-            if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
+            // 如果是文字，在照片模式下也散开
+            if (data.type === 'TEXT') {
+                 tPos.copy(data.explodePos).multiplyScalar(1.5);
+            }
+            else if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
                 tPos.set(0, 0, CONFIG.camZ - 30);
                 tScale.multiplyScalar(4.0);
                 mesh.lookAt(camera.position);
                 mesh.renderOrder = 999;
-                tRot.copy(mesh.rotation);
+                tRot.copy(mesh.rotation); 
                 mesh.position.lerp(tPos, 0.08);
                 mesh.scale.lerp(tScale, 0.08);
                 return;
@@ -354,11 +450,9 @@ function animate() {
 // ================= 5. 输入适配 =================
 function enableMouseMode() {
     document.body.dataset.mode = 'mouse';
-    // 切换 UI 显示
     document.getElementById('hint-cam').classList.remove('active');
     document.getElementById('hint-mouse').classList.add('active');
     updateStatusText("MOUSE MODE ACTIVE");
-    
     const loader = document.getElementById('loader');
     loader.style.opacity = 0;
     setTimeout(() => loader.remove(), 800);
@@ -385,7 +479,6 @@ function initMediaPipe() {
             const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
             inputState.isPinch = pinchDist < 0.05;
             
-            // 手势优先级高于鼠标锁定
             if (inputState.isFist || inputState.isPinch) {
                 inputState.mouseLockedPhoto = false;
             }
@@ -399,7 +492,6 @@ function initMediaPipe() {
     
     cam.start().then(() => {
         document.body.dataset.mode = 'camera';
-        // 切换 UI 显示
         document.getElementById('hint-cam').classList.add('active');
         document.getElementById('hint-mouse').classList.remove('active');
         const loader = document.getElementById('loader');
