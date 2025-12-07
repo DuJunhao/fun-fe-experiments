@@ -7,20 +7,18 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // ================= 配置 =================
 const CONFIG = {
-    particleCount: 700, 
+    particleCount: 600, 
     bucketXmlUrl: "https://storage.googleapis.com/beautiful-days/?prefix=christa/", 
     publicBaseUrl: "https://static.refinefuture.com/", 
     treeHeight: 90,
     explodeRadius: 150,
-    camZ: 120,
+    camZ: 130,
     colors: { 
         gold: 0xFFD700,
-        darkGold: 0xB8860B,
-        redShiny: 0xDC143C,
-        greenMatte: 0x0B3d0B,
+        red: 0xC41E3A,    // 圣诞红
+        green: 0x2F4F4F,  // 深绿
         white: 0xFFFFFF,
-        emissiveGold: 0xAA8800,
-        emissiveRed: 0x550000
+        emissiveGold: 0xAA8800
     }
 };
 
@@ -46,18 +44,19 @@ const inputState = {
 const textureLoader = new THREE.TextureLoader();
 textureLoader.setCrossOrigin('anonymous');
 
-// 创建带文字的占位图
-function createTextTexture(text) {
+// 占位图生成
+function createPlaceholderTexture(idx) {
     const canvas = document.createElement('canvas');
     canvas.width = 512; canvas.height = 680;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#222'; ctx.fillRect(0,0,512,680);
-    ctx.strokeStyle = '#555'; ctx.lineWidth = 10; ctx.strokeRect(20,20,472,640);
-    ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
-    ctx.fillText(text, 256, 340);
-    return new THREE.CanvasTexture(canvas);
+    ctx.fillStyle = '#eee'; ctx.fillRect(0,0,512,680);
+    ctx.fillStyle = '#333'; ctx.fillRect(20,20,472,472);
+    ctx.font = '40px Arial'; ctx.fillStyle = '#000'; ctx.textAlign = 'center';
+    ctx.fillText(`Loading...`, 256, 600);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
 }
-const loadingTex = createTextTexture("LOADING...");
 
 // ================= 1. 启动入口 =================
 async function fetchBucketPhotos() {
@@ -84,8 +83,8 @@ async function fetchBucketPhotos() {
         if(loaderText) loaderText.innerText = `FOUND ${imageList.length} MOMENTS`;
         
     } catch (e) {
-        console.warn("Using offline mode", e);
-        if(loaderText) loaderText.innerText = "USING OFFLINE MODE";
+        console.warn("Using fallback mode", e);
+        if(loaderText) loaderText.innerText = "OFFLINE MODE";
         for(let i=1; i<=6; i++) imageList.push(`christa/${i}.jpg`);
     }
 
@@ -93,7 +92,7 @@ async function fetchBucketPhotos() {
     initMediaPipe(); 
 }
 
-// ================= 2. 交互逻辑 =================
+// ================= 2. 交互逻辑 (修复) =================
 
 function getIntersectedPhoto(clientX, clientY) {
     const mv = new THREE.Vector2();
@@ -101,13 +100,15 @@ function getIntersectedPhoto(clientX, clientY) {
     mv.y = -(clientY / window.innerHeight) * 2 + 1;
 
     raycaster.setFromCamera(mv, camera);
+    // 检测所有照片对象 (photos 数组里存的是 Group)
     const intersects = raycaster.intersectObjects(photos, true);
 
     if (intersects.length > 0) {
-        let hitObj = intersects[0].object;
-        while(hitObj) {
-            if (hitObj.userData && hitObj.userData.type === 'PHOTO') return hitObj;
-            hitObj = hitObj.parent;
+        // 向上寻找直到找到 Group 根节点
+        let obj = intersects[0].object;
+        while (obj) {
+            if (obj.userData && obj.userData.type === 'PHOTO') return obj;
+            obj = obj.parent;
         }
     }
     return null;
@@ -122,6 +123,7 @@ function onGlobalMouseMove(event) {
         inputState.y = event.clientY / window.innerHeight;
     }
     
+    // 只有未锁定时才显示高亮光标
     if (!inputState.mouseLockedPhoto) {
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
         document.body.style.cursor = hit ? 'pointer' : 'default';
@@ -129,21 +131,25 @@ function onGlobalMouseMove(event) {
 }
 
 function onGlobalMouseDown(event) {
-    if (event.button !== 0) return;
+    if (event.button !== 0) return; // 左键
 
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
     if (targetPhoto) {
+        // --- 点击了照片 ---
         inputState.mouseLockedPhoto = true;
         activePhotoIdx = targetPhoto.userData.idx;
-        inputState.isFist = false;
+        inputState.isFist = false; 
         updateStatusText("MEMORY LOCKED", "#00ffff");
     } else {
+        // --- 点击了空白处 ---
         if (inputState.mouseLockedPhoto) {
+            // 如果之前锁定了，现在解锁
             inputState.mouseLockedPhoto = false;
             activePhotoIdx = -1;
             updateStatusText("GALAXY MODE");
         } else {
+            // 如果没锁定，开始聚合
             inputState.isFist = true;
             updateStatusText("FORMING TREE", "#FFD700");
         }
@@ -151,6 +157,7 @@ function onGlobalMouseDown(event) {
 }
 
 function onGlobalMouseUp(event) {
+    // 只有在没锁定照片时，松开鼠标才停止聚合
     if (!inputState.mouseLockedPhoto) {
         inputState.isFist = false;
         updateStatusText("GALAXY MODE");
@@ -171,7 +178,7 @@ function initThree() {
     const container = document.getElementById('canvas-container');
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
-    scene.fog = new THREE.FogExp2(0x000000, 0.0015);
+    scene.fog = new THREE.FogExp2(0x000000, 0.001);
 
     camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = CONFIG.camZ;
@@ -179,22 +186,24 @@ function initThree() {
     renderer = new THREE.WebGLRenderer({ antialias: true, stencil: false, depth: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // 使用 AcesFilmic 色调映射，让高光更柔和
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0; 
+    renderer.toneMappingExposure = 1.1; 
     container.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0x111111, 1);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.2);
     scene.add(ambient);
     const mainLight = new THREE.DirectionalLight(0xFFF5E1, 3);
-    mainLight.position.set(50, 50, 50);
+    mainLight.position.set(20, 50, 50);
     scene.add(mainLight);
     const centerLight = new THREE.PointLight(0xFFD700, 5, 150);
     scene.add(centerLight);
     
+    // 后期辉光 (Bloom)
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.3; // 保持高阈值，防止非发光物体泛光
-    bloomPass.strength = 1.8; 
+    bloomPass.threshold = 0.2; // 提高阈值，防止照片发光
+    bloomPass.strength = 1.5; 
     bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
@@ -206,127 +215,140 @@ function initThree() {
     window.addEventListener('mousemove', onGlobalMouseMove);
     window.addEventListener('mousedown', onGlobalMouseDown);
     window.addEventListener('mouseup', onGlobalMouseUp);
+    // 右键辅助
+    window.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        inputState.mouseLockedPhoto = false;
+        inputState.isFist = false;
+        activePhotoIdx = -1;
+        updateStatusText("GALAXY MODE");
+    });
     window.addEventListener('resize', onWindowResize);
     
     animate();
 }
 
+// ================= 核心：生成圣诞元素 (代码建模) =================
 function createChristmasObjects() {
-    const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.5 });
-    const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.redShiny, metalness: 0.7, roughness: 0.15, emissive: CONFIG.colors.emissiveRed, emissiveIntensity: 0.4 });
-    const matGreenMatte = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.greenMatte, metalness: 0.1, roughness: 0.8 });
-    const matWhiteFelt = new THREE.MeshLambertMaterial({ color: CONFIG.colors.white }); 
-    const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 0.6 });
+    // 1. 材质库
+    // 物理材质用于装饰物，产生金属光泽
+    const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.8, roughness: 0.2, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.2 });
+    const matRed = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.6, roughness: 0.3, emissive: 0x550000, emissiveIntensity: 0.2 });
+    const matGreen = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.green, metalness: 0.2, roughness: 0.8 }); // 哑光绿
+    const matWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }); // 绒毛感
+    const matCandyRed = new THREE.MeshStandardMaterial({ color: 0xff0000, roughness: 0.2 }); // 糖果红
+    const matCandyWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, emissive: 0x222222 }); // 糖果白(微亮)
 
-    const sphereGeo = new THREE.SphereGeometry(1.3, 24, 24); 
-    const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); 
-    const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); 
-    const starGeo = new THREE.OctahedronGeometry(1.8); 
-
-    const hatConeGeo = new THREE.ConeGeometry(1.2, 3, 16);
-    const hatBrimGeo = new THREE.TorusGeometry(1.2, 0.3, 12, 24);
-    const stockLegGeo = new THREE.CylinderGeometry(0.8, 0.8, 2.5, 12);
-    const stockFootGeo = new THREE.CylinderGeometry(0.8, 0.9, 1.5, 12);
-
+    // 2. 批量生成装饰粒子
     for(let i=0; i<CONFIG.particleCount; i++) {
         let mesh;
-        const randType = Math.random();
+        const type = Math.random();
 
-        if (randType < 0.30) {
-            mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
-        } else if (randType < 0.50) {
-            mesh = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRedShiny : matGreenMatte);
-            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-        } else if (randType < 0.65) {
-            mesh = new THREE.Mesh(candyGeo, matCandy);
-            mesh.rotation.set((Math.random()-0.5),(Math.random()-0.5), Math.random()*Math.PI);
-        } else if (randType < 0.80) {
-            mesh = new THREE.Mesh(starGeo, matGold);
-            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
-        } else if (randType < 0.90) {
-            mesh = new THREE.Group();
-            const cone = new THREE.Mesh(hatConeGeo, matRedShiny);
-            const brim = new THREE.Mesh(hatBrimGeo, matWhiteFelt);
-            brim.position.y = -1.5; brim.rotation.x = Math.PI / 2;
-            mesh.add(cone); mesh.add(brim);
-            mesh.rotation.z = (Math.random() - 0.5) * 0.5;
+        if (type < 0.3) {
+            // [球体] 金/红
+            const geo = new THREE.SphereGeometry(1.2, 16, 16);
+            mesh = new THREE.Mesh(geo, Math.random()>0.5 ? matGold : matRed);
+        } else if (type < 0.5) {
+            // [礼物盒] 正方体 + 十字丝带
+            const group = new THREE.Group();
+            const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), Math.random()>0.5 ? matRed : matGreen);
+            // 丝带
+            const ribbon1 = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.4, 2.1), matGold);
+            const ribbon2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.1, 2.1), matGold);
+            group.add(box); group.add(ribbon1); group.add(ribbon2);
+            mesh = group;
+        } else if (type < 0.7) {
+            // [糖果棍] 简单的红白相间圆柱
+            const group = new THREE.Group();
+            const segHeight = 0.8;
+            for(let j=0; j<4; j++) {
+                const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, segHeight, 8), j%2===0 ? matCandyRed : matCandyWhite);
+                cyl.position.y = (j - 1.5) * segHeight;
+                group.add(cyl);
+            }
+            mesh = group;
+            mesh.rotation.z = Math.random() * Math.PI; // 随机倒
+        } else if (type < 0.85) {
+            // [圣诞帽] 圆锥 + 圆环
+            const group = new THREE.Group();
+            const cone = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.5, 16), matRed);
+            const brim = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.4, 8, 16), matWhite);
+            brim.position.y = -1.2; brim.rotation.x = Math.PI/2;
+            const ball = new THREE.Mesh(new THREE.SphereGeometry(0.5), matWhite);
+            ball.position.y = 1.25;
+            group.add(cone); group.add(brim); group.add(ball);
+            mesh = group;
         } else {
-            mesh = new THREE.Group();
-            const leg = new THREE.Mesh(stockLegGeo, matRedShiny);
-            const foot = new THREE.Mesh(stockFootGeo, matRedShiny);
-            foot.rotation.x = Math.PI / 2; foot.position.set(0, -1.25, 0.5);
-            const cuff = new THREE.Mesh(hatBrimGeo, matWhiteFelt);
-            cuff.position.y = 1.25; cuff.rotation.x = Math.PI / 2; cuff.scale.set(0.8, 0.8, 0.8);
-            mesh.add(leg); mesh.add(foot); mesh.add(cuff);
-            mesh.rotation.set(Math.random()*0.5, Math.random()*Math.PI, 0);
+            // [星星] 金色八面体
+            mesh = new THREE.Mesh(new THREE.OctahedronGeometry(1.5), matGold);
         }
-        
-        const scaleVar = 0.7 + Math.random() * 0.5;
-        mesh.scale.set(scaleVar, scaleVar, scaleVar);
 
+        // 随机缩放
+        const s = 0.8 + Math.random() * 0.5;
+        mesh.scale.set(s,s,s);
+        
         initParticle(mesh, 'DECOR', i);
         scene.add(mesh);
         particles.push(mesh);
     }
 
-    // === 照片卡片 (核心修复：Z轴防遮挡) ===
-    const photoGeo = new THREE.PlaneGeometry(9, 12);
+    // === 3. 生成照片 (修复版) ===
     // 边框几何体
-    const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.5); 
-    
-    // 暗金色材质，不发光
-    const borderMat = new THREE.MeshPhysicalMaterial({
-        color: CONFIG.colors.darkGold, 
-        metalness: 0.7,
-        roughness: 0.4, 
-        emissive: 0x000000,
-        emissiveIntensity: 0.0
+    const frameGeo = new THREE.BoxGeometry(9.6, 12.6, 0.5); 
+    // 边框材质：使用 Standard 材质，emissive 设为黑，防止发光
+    const frameMat = new THREE.MeshStandardMaterial({
+        color: 0xB8860B, // 暗金色
+        metalness: 0.6,
+        roughness: 0.4,
+        emissive: 0x000000 
     });
-    
+
+    const photoGeo = new THREE.PlaneGeometry(9, 12);
+
     imageList.forEach((filename, i) => {
-        // 照片材质
+        // 照片容器 Group
+        const group = new THREE.Group();
+        group.userData.type = 'PHOTO'; // 标记在 Group 上
+        group.userData.idx = i;
+
+        // 照片本体 (MeshBasicMaterial 确保原本色彩)
         const mat = new THREE.MeshBasicMaterial({ 
-            map: loadingTex, 
-            side: THREE.DoubleSide,
-            color: 0xffffff // 确保基础色是白，防止变黑
+            map: createPlaceholderTexture(i), 
+            side: THREE.DoubleSide 
         });
-        
+        const photoMesh = new THREE.Mesh(photoGeo, mat);
+        photoMesh.position.z = 0.26; // 稍微在边框前面一点点
+
+        // 边框
+        const border = new THREE.Mesh(frameGeo, frameMat);
+        border.position.z = 0;
+
+        group.add(border);
+        group.add(photoMesh);
+
+        // 异步加载真实图片
         const url = CONFIG.publicBaseUrl + filename;
         textureLoader.load(url, (tex) => {
             tex.colorSpace = THREE.SRGBColorSpace;
-            mat.map = tex; mat.needsUpdate = true;
-        }, undefined, () => {
-            mat.map = createTextTexture("LOAD FAILED");
+            mat.map = tex; 
+            mat.needsUpdate = true;
         });
 
-        const mesh = new THREE.Mesh(photoGeo, mat);
-        mesh.userData.type = 'PHOTO';
-        mesh.userData.idx = i;
-        // 把照片稍微往前推一点点，防止和 0 平面打架
-        mesh.position.z = 0.05;
-
-        const border = new THREE.Mesh(borderGeo, borderMat);
-        // 【关键修复】: 
-        // 边框厚度 0.5，中心在 -0.5。前脸在 -0.5 + 0.25 = -0.25。
-        // 照片在 0.05。
-        // 0.05 > -0.25。照片绝对在边框前面。
-        border.position.z = -0.5; 
-        
-        mesh.add(border);
-        
-        initParticle(mesh, 'PHOTO', i);
-        scene.add(mesh);
-        particles.push(mesh);
-        photos.push(mesh); 
+        initParticle(group, 'PHOTO', i);
+        scene.add(group);
+        particles.push(group);
+        photos.push(group); // 存入 photos 供射线检测
     });
 }
 
 function initParticle(mesh, type, idx) {
     const h = Math.random();
-    const angle = h * Math.PI * 25 + idx * 0.1; 
-    const r = (1.05 - h) * 40; 
+    // 树形：圆锥
+    const angle = h * Math.PI * 20 + idx * 0.1; 
+    const r = (1.0 - h) * 45 + 2; 
     const treePos = new THREE.Vector3(Math.cos(angle)*r, (h-0.5)*CONFIG.treeHeight, Math.sin(angle)*r);
     
+    // 散开：球形
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     const rad = 60 + Math.random() * CONFIG.explodeRadius;
@@ -336,14 +358,12 @@ function initParticle(mesh, type, idx) {
         rad * Math.cos(phi)
     );
 
-    mesh.userData.type = type;
-    mesh.userData.idx = idx;
-    mesh.userData.treePos = treePos;
-    mesh.userData.explodePos = explodePos;
-    mesh.userData.rotSpeed = {x:Math.random()*0.02, y:Math.random()*0.02, z:Math.random()*0.02};
-    mesh.userData.baseScale = mesh.scale.clone();
-    mesh.userData.randomPhase = Math.random() * 10;
-
+    mesh.userData = Object.assign(mesh.userData, {
+        treePos, explodePos,
+        rotSpeed: {x:Math.random()*0.02, y:Math.random()*0.02, z:Math.random()*0.02},
+        baseScale: mesh.scale.clone(),
+        randomPhase: Math.random() * 10
+    });
     mesh.position.copy(explodePos);
 }
 
@@ -351,11 +371,11 @@ function createMerryChristmas() {
     const loader = new FontLoader();
     loader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', function (font) {
         const textMat = new THREE.MeshPhysicalMaterial({
-            color: CONFIG.colors.gold, metalness: 1.0, roughness: 0.15,
+            color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.2,
             emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.6,
             clearcoat: 1.0
         });
-        const settings = { font: font, size: 5, height: 1.2, bevelEnabled: true, bevelThickness: 0.3, bevelSize: 0.15, bevelSegments: 3 };
+        const settings = { font: font, size: 5, height: 1.2, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.1, bevelSegments: 3 };
 
         const merryGeo = new TextGeometry('MERRY', settings);
         const chrisGeo = new TextGeometry('CHRISTMAS', settings);
@@ -367,10 +387,10 @@ function createMerryChristmas() {
         const group = new THREE.Group();
         group.add(mMesh); group.add(cMesh);
 
-        const explodePos = new THREE.Vector3(0, CONFIG.treeHeight + 50, 0);
+        const explodePos = new THREE.Vector3(0, CONFIG.treeHeight + 60, 0);
         group.userData = {
-            type: 'TEXT', treePos: new THREE.Vector3(0, CONFIG.treeHeight/2 + 18, 0),
-            explodePos: explodePos, rotSpeed: {x:0, y:0.01, z:0},
+            treePos: new THREE.Vector3(0, CONFIG.treeHeight/2 + 15, 0),
+            explodePos: explodePos, rotSpeed: {x:0,y:0.01,z:0},
             baseScale: new THREE.Vector3(1,1,1), randomPhase: 0
         };
         group.position.copy(explodePos);
@@ -403,6 +423,7 @@ function updateLogic() {
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
         
+        // 旋转
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
@@ -420,6 +441,7 @@ function updateLogic() {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
                 tPos.set(0, 0, CONFIG.camZ - 40); 
                 mesh.lookAt(camera.position); 
+                // Group 需要重置旋转才能正对
                 mesh.rotation.set(0,0,0);
                 tScale.multiplyScalar(3.5); 
             } else {
@@ -485,6 +507,7 @@ function initMediaPipe() {
         width: 640, height: 480
     });
     
+    // 静默处理摄像头失败
     cam.start()
         .then(() => {
             isCameraMode = true;
@@ -494,8 +517,8 @@ function initMediaPipe() {
             if(loader) { loader.style.opacity = 0; setTimeout(() => loader.remove(), 500); }
         })
         .catch(err => {
-            console.error("Camera denied/failed:", err);
-            enableMouseMode("CAMERA FAILED - MOUSE MODE");
+            // 失败时不 Alert，直接切模式
+            enableMouseMode("CAMERA NOT AVAILABLE");
         });
 }
 
