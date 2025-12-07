@@ -50,24 +50,25 @@ function createTextTexture(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 512; canvas.height = 680;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#222'; ctx.fillRect(0,0,512,680);
-    ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 20; ctx.strokeRect(0,0,512,680);
-    ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0,0,512,680);
+    ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 10; ctx.strokeRect(20,20,472,640);
+    ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#d4af37'; ctx.textAlign = 'center';
     ctx.fillText(text, 256, 340);
     return new THREE.CanvasTexture(canvas);
 }
 const loadingTex = createTextTexture("LOADING...");
 
-// ================= 1. 启动入口 =================
+// ================= 1. 启动入口 (无外部文件依赖) =================
 async function fetchBucketPhotos() {
     const loaderText = document.getElementById('loader-text');
+    // 强制保险：3秒后移除loading
     setTimeout(() => {
         const loader = document.getElementById('loader');
         if(loader) { loader.style.opacity = 0; setTimeout(() => loader.remove(), 500); }
     }, 2500);
 
     try {
-        if(loaderText) loaderText.innerText = "READING MEMORIES...";
+        if(loaderText) loaderText.innerText = "SCANNING MEMORIES...";
         const response = await fetch(CONFIG.bucketXmlUrl);
         if (!response.ok) throw new Error("Network error");
         const str = await response.text();
@@ -84,7 +85,7 @@ async function fetchBucketPhotos() {
         if (imageList.length === 0) throw new Error("No images found");
         if(loaderText) loaderText.innerText = `LOADED ${imageList.length} PHOTOS`;
     } catch (e) {
-        console.warn("Offline mode", e);
+        console.warn("Using offline mode", e);
         if(loaderText) loaderText.innerText = "OFFLINE MODE";
         for(let i=1; i<=6; i++) imageList.push(`christa/${i}.jpg`);
     }
@@ -93,7 +94,7 @@ async function fetchBucketPhotos() {
     setTimeout(initMediaPipeSafe, 100);
 }
 
-// ================= 2. 交互逻辑 =================
+// ================= 2. 交互逻辑 (已稳定) =================
 
 function getIntersectedPhoto(clientX, clientY) {
     const mv = new THREE.Vector2();
@@ -116,9 +117,10 @@ function onGlobalMouseMove(event) {
     inputState.x = event.clientX / window.innerWidth;
     inputState.y = event.clientY / window.innerHeight;
     
-    if (!inputState.mouseLockedPhoto) {
+    if (!activePhoto) {
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
         document.body.style.cursor = hit ? 'pointer' : 'default';
+        
         photos.forEach(p => {
             p.userData.hoverScale = (p === hit) ? 1.2 : 1.0;
         });
@@ -129,19 +131,16 @@ function onGlobalMouseMove(event) {
 
 function onGlobalMouseDown(event) {
     if (event.button !== 0) return; 
-
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
     if (targetPhoto) {
-        inputState.mouseLockedPhoto = true;
+        activePhoto = targetPhoto;
         activePhotoIdx = targetPhoto.userData.idx;
         inputState.isFist = false; 
-        inputState.zoomLevel = 4.0; 
         updateStatusText("MEMORY LOCKED", "#00ffff");
     } else {
-        if (inputState.mouseLockedPhoto) {
-            inputState.mouseLockedPhoto = false;
-            activePhotoIdx = -1;
+        if (activePhoto) {
+            activePhoto = null;
             updateStatusText("GALAXY MODE");
         } else {
             inputState.isFist = true;
@@ -151,16 +150,16 @@ function onGlobalMouseDown(event) {
 }
 
 function onGlobalMouseUp(event) {
-    if (!inputState.mouseLockedPhoto) {
+    if (!activePhoto) {
         inputState.isFist = false;
         updateStatusText("GALAXY MODE");
     }
 }
 
 function onGlobalWheel(event) {
-    if (activePhotoIdx !== -1) {
+    if (activePhoto) {
         inputState.zoomLevel += event.deltaY * -0.005;
-        inputState.zoomLevel = Math.max(1.5, Math.min(8.0, inputState.zoomLevel));
+        inputState.zoomLevel = Math.max(0.5, Math.min(2.0, inputState.zoomLevel));
     }
 }
 
@@ -173,7 +172,7 @@ function updateStatusText(text, color = "#fff") {
     }
 }
 
-// ================= 3. Three.js 场景构建 =================
+// ================= 3. Three.js 核心构建 (恢复元素) =================
 function initThree() {
     const container = document.getElementById('canvas-container');
     scene = new THREE.Scene();
@@ -186,7 +185,6 @@ function initThree() {
     renderer = new THREE.WebGLRenderer({ antialias: true, stencil: false, depth: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    // 强制关闭 ToneMapping，保证照片清晰
     renderer.toneMapping = THREE.NoToneMapping; 
     container.appendChild(renderer.domElement);
 
@@ -198,7 +196,6 @@ function initThree() {
     const centerLight = new THREE.PointLight(0xFFD700, 5, 150);
     scene.add(centerLight);
     
-    // 辉光
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
     bloomPass.threshold = 0.9; 
@@ -211,30 +208,26 @@ function initThree() {
     createChristmasObjects();
     createMerryChristmas();
 
-    window.addEventListener('mousemove', onGlobalMouseMove);
-    window.addEventListener('mousedown', onGlobalMouseDown);
-    window.addEventListener('mouseup', onGlobalMouseUp);
-    window.addEventListener('wheel', onGlobalWheel);
     window.addEventListener('resize', onWindowResize);
-    window.addEventListener('contextmenu', e => e.preventDefault());
     
     animate();
 }
 
 function createChristmasObjects() {
-    // 材质
+    // === 材质定义 ===
     const matLeaf = new THREE.MeshLambertMaterial({ color: CONFIG.colors.leafGreen, reflectivity: 0.1 });
-    const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0 });
-    const matRed = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
+    const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.5 });
+    const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
     const matGreenMatte = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.green, metalness: 0.1, roughness: 0.8 });
-    const matWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }); 
+    const matWhite = new THREE.MeshStandardMaterial({ color: CONFIG.colors.white, roughness: 0.9 }); 
     const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 1.2 });
 
-    const sphereGeo = new THREE.SphereGeometry(1.3, 24, 24); 
+    // === 几何体 ===
+    const leafGeo = new THREE.TetrahedronGeometry(2.0); 
+    const sphereGeo = new THREE.SphereGeometry(1.3, 16, 16); 
     const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); 
     const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); 
     const starGeo = new THREE.OctahedronGeometry(1.8); 
-    const leafGeo = new THREE.TetrahedronGeometry(2.0);
 
     const hatConeGeo = new THREE.ConeGeometry(1.2, 3, 16);
     const hatBrimGeo = new THREE.TorusGeometry(1.2, 0.4, 8, 16);
@@ -246,46 +239,52 @@ function createChristmasObjects() {
         const type = Math.random();
 
         if (type < 0.60) {
+            // 松针 (树叶背景)
             mesh = new THREE.Mesh(leafGeo, matLeaf);
             mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
             mesh.scale.setScalar(0.8 + Math.random() * 0.5);
             initParticle(mesh, 'LEAF', i);
-        } else if (type < 0.70) {
-            mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRed);
-        } else if (type < 0.80) {
-            const group = new THREE.Group();
-            const box = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRed : matGreenMatte);
-            group.add(box);
-            const ribbon = new THREE.Mesh(new THREE.BoxGeometry(2.3, 2.3, 0.3), matGold);
-            group.add(ribbon);
-            mesh = group;
-        } else if (type < 0.88) {
-            mesh = new THREE.Mesh(candyGeo, matCandy);
-            mesh.rotation.set((Math.random()-0.5),(Math.random()-0.5), Math.random()*Math.PI);
-        } else if (type < 0.93) {
-            mesh = new THREE.Mesh(starGeo, matGold);
-            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
-        } else if (type < 0.97) {
-            const group = new THREE.Group();
-            const cone = new THREE.Mesh(hatConeGeo, matRed);
-            const brim = new THREE.Mesh(hatBrimGeo, matWhite);
-            brim.position.y = -1.5; brim.rotation.x = Math.PI/2;
-            group.add(cone); group.add(brim);
-            mesh = group;
         } else {
-            const group = new THREE.Group();
-            const leg = new THREE.Mesh(stockLegGeo, matRed);
-            const foot = new THREE.Mesh(stockFootGeo, matRed);
-            foot.rotation.x = Math.PI / 2; foot.position.set(0, -1.25, 0.5);
-            const cuff = new THREE.Mesh(hatBrimGeo, matWhite);
-            cuff.position.y = 1.25; cuff.rotation.x = Math.PI / 2; cuff.scale.set(0.8, 0.8, 0.8);
-            group.add(leg); group.add(foot); group.add(cuff);
-            mesh = group;
+            // 装饰品
+            if (type < 0.70) {
+                mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
+            } else if (type < 0.80) {
+                // 礼物盒
+                const group = new THREE.Group();
+                const box = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRedShiny : matGreenMatte);
+                group.add(box);
+                const ribbon = new THREE.Mesh(new THREE.BoxGeometry(2.1, 2.1, 0.3), matGold);
+                group.add(ribbon);
+                mesh = group;
+            } else if (type < 0.88) {
+                // 糖果棒
+                mesh = new THREE.Mesh(candyGeo, matCandy);
+                mesh.rotation.set((Math.random()-0.5),(Math.random()-0.5), Math.random()*Math.PI);
+            } else if (type < 0.93) {
+                // 星星
+                mesh = new THREE.Mesh(starGeo, matGold);
+            } else if (type < 0.97) {
+                // 圣诞帽
+                const group = new THREE.Group();
+                const cone = new THREE.Mesh(hatConeGeo, matRedShiny);
+                const brim = new THREE.Mesh(hatBrimGeo, matWhite);
+                brim.position.y = -1.5; brim.rotation.x = Math.PI/2;
+                group.add(cone); group.add(brim);
+                mesh = group;
+            } else {
+                // 圣诞袜
+                const group = new THREE.Group();
+                const leg = new THREE.Mesh(stockLegGeo, matRedShiny);
+                const foot = new THREE.Mesh(stockFootGeo, matRedShiny);
+                foot.rotation.x = Math.PI / 2; foot.position.set(0, -1.25, 0.5);
+                const cuff = new THREE.Mesh(hatBrimGeo, matWhite);
+                cuff.position.y = 1.25; cuff.rotation.x = Math.PI / 2; cuff.scale.set(0.8, 0.8, 0.8);
+                group.add(leg); group.add(foot); group.add(cuff);
+                mesh = group;
+            }
+            initParticle(mesh, 'DECOR', i);
         }
         
-        const scaleVar = 0.8 + Math.random() * 0.4;
-        mesh.scale.set(scaleVar, scaleVar, scaleVar);
-        initParticle(mesh, 'DECOR', i);
         scene.add(mesh);
         particles.push(mesh);
     }
@@ -294,17 +293,14 @@ function createChristmasObjects() {
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.2); 
     
-    // 边框材质：普通金属
     const borderMat = new THREE.MeshStandardMaterial({
         color: 0xdaa520, metalness: 0.6, roughness: 0.4
     });
     
     imageList.forEach((filename, i) => {
-        // 【关键修复】MeshBasicMaterial + 明确的白色，保证可见
         const mat = new THREE.MeshBasicMaterial({ 
             map: loadingTex, 
             side: THREE.DoubleSide,
-            color: 0xffffff, 
             toneMapped: false 
         });
         
@@ -316,22 +312,21 @@ function createChristmasObjects() {
             mat.map = createTextTexture("LOAD FAILED");
         });
 
-        const mesh = new THREE.Mesh(photoGeo, mat);
-        mesh.userData.type = 'PHOTO';
-        mesh.userData.idx = i;
-        mesh.position.z = 0.15; // 照片在前
+        const photoMesh = new THREE.Mesh(photoGeo, mat);
+        photoMesh.position.z = 0.15; 
 
         const border = new THREE.Mesh(borderGeo, borderMat);
-        border.position.z = -0.15; // 边框在后
+        border.position.z = -0.15; 
 
         const group = new THREE.Group();
+        group.userData = {type: 'PHOTO', idx: i};
         group.add(border);
-        group.add(photoMesh); // Mesh is not defined here
-
-        initParticle(group, 'PHOTO', i); // Needs to use the group, not the mesh
+        group.add(photoMesh);
+        
+        initParticle(group, 'PHOTO', i);
         scene.add(group);
         particles.push(group);
-        photos.push(group); // Add the Group to photos array
+        photoCards.push(group); 
     });
 }
 
@@ -352,7 +347,7 @@ function initParticle(mesh, type, idx) {
     );
 
     mesh.userData = Object.assign(mesh.userData, {
-        type, idx, treePos, explodePos,
+        treePos, explodePos,
         rotSpeed: {x:Math.random()*0.02, y:Math.random()*0.02, z:Math.random()*0.02},
         baseScale: mesh.scale.clone(),
         randomPhase: Math.random() * 10
@@ -392,9 +387,10 @@ function createMerryChristmas() {
     });
 }
 
-// ================= 4. 动画循环 =================
+// ================= 4. 动画循环 (核心状态机) =================
 function updateLogic() {
-    if (activePhotoIdx !== -1) {
+    // 状态优先级
+    if (activePhoto) {
         targetState = 'PHOTO';
     } else if (inputState.isFist) {
         targetState = 'TREE';
@@ -404,6 +400,7 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
     
+    // 视角控制
     if (targetState !== 'PHOTO') {
         const targetRotY = (inputState.x - 0.5) * 1.0;
         const targetRotX = (inputState.y - 0.5) * 0.5;
@@ -411,6 +408,7 @@ function updateLogic() {
         scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
     }
 
+    // 更新所有粒子
     particles.forEach(mesh => {
         const data = mesh.userData;
         let tPos = new THREE.Vector3();
@@ -430,12 +428,17 @@ function updateLogic() {
             tPos.y += Math.cos(time*0.5 + data.randomPhase)*2;
         }
         else if (targetState === 'PHOTO') {
-            if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                tPos.set(0, 0, CONFIG.camZ - 40); 
+            if (mesh === activePhoto) {
+                // 选中照片：飞到脸前
+                const tScaleMult = data.baseScale.clone().multiplyScalar(inputState.zoomLevel); // 动态缩放
+                
+                tPos.set(0, 0, CONFIG.camZ - 15); // 贴近相机
+                tScale.copy(tScaleMult);
+                
                 mesh.lookAt(camera.position); 
                 mesh.rotation.set(0,0,0);
-                tScale.multiplyScalar(inputState.zoomLevel); 
             } else {
+                // 其他物体：退散
                 tPos.copy(data.explodePos).multiplyScalar(2.0); 
             }
         }
@@ -462,22 +465,14 @@ function onWindowResize() {
 async function initMediaPipeSafe() {
     const video = document.getElementById('input_video');
     
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        enableMouseMode("MOUSE MODE (NO API)");
-        return;
-    }
-
-    // 预检查物理设备和权限
+    // 1. 物理检查 (静默)
     try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const hasCamera = devices.some(device => device.kind === 'videoinput');
-        if (!hasCamera) {
-            enableMouseMode("MOUSE MODE (NO CAM)");
-            return;
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error("No API");
         }
-        await navigator.mediaDevices.getUserMedia({ video: true }); // 检查权限是否被拒绝
+        await navigator.mediaDevices.getUserMedia({ video: true }); // 提前检查权限
     } catch (e) {
-        enableMouseMode("MOUSE MODE (INIT FAILED)");
+        enableMouseMode("MOUSE MODE (NO CAM)");
         return;
     }
 
@@ -487,9 +482,10 @@ async function initMediaPipeSafe() {
 
         hands.onResults(results => {
             if (!isCameraMode) return; 
+
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
-                if (activePhotoIdx === -1) {
+                if (!activePhoto) {
                     inputState.x = 1.0 - lm[9].x; 
                     inputState.y = lm[9].y;
                 }
@@ -503,15 +499,18 @@ async function initMediaPipeSafe() {
                 
                 if (inputState.isPinch) {
                     const now = Date.now();
-                    if (now - inputState.lastPinchTime > 1000 && activePhotoIdx === -1) {
-                        activePhotoIdx = Math.floor(Math.random() * photos.length); 
+                    if (!activePhoto && (now - inputState.lastPinchTime > 1000)) {
+                        // 随机选中一张
+                        activePhoto = photoCards[Math.floor(Math.random() * photoCards.length)];
                         inputState.lastPinchTime = now;
                     }
-                    let scale = (pinchDist - 0.02) * 40.0;
-                    inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
+                    if (activePhoto) {
+                        let scale = (pinchDist - 0.02) * 40.0;
+                        inputState.zoomLevel = Math.max(0.5, Math.min(3.0, scale));
+                    }
                 }
                 
-                if (inputState.isFist) activePhotoIdx = -1; // 握拳打断
+                if (inputState.isFist) activePhoto = null;
             }
         });
 
