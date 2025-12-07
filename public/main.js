@@ -366,4 +366,181 @@ function initParticle(mesh, type, idx) {
     const explodePos = new THREE.Vector3(
         rad*Math.sin(phi)*Math.cos(theta),
         rad*Math.sin(phi)*Math.sin(theta),
-        rad*Math.
+        rad*Math.cos(phi)
+    );
+
+    mesh.userData = {
+        type, idx, treePos, explodePos,
+        // 增加自转速度，看起来更闪烁
+        rotSpeed: {x: (Math.random()-0.5)*0.05, y: (Math.random()-0.5)*0.05, z: (Math.random()-0.5)*0.05},
+        baseScale: mesh.scale.clone(),
+        randomPhase: Math.random() * Math.PI * 2 // 用于呼吸动画的随机相位
+    };
+    mesh.position.copy(explodePos);
+}
+
+// ================= 4. 状态机与动画 (视觉优化) =================
+
+function updateLogic() {
+    const statusEl = document.getElementById('status-text');
+    if (inputState.forcePhotoSelection) {
+        // 状态已经在 selectPhoto 中设置
+    } else if (inputState.isPinch) {
+        if (targetState !== 'PHOTO') {
+            targetState = 'PHOTO';
+            activePhotoIdx = (activePhotoIdx + 1) % photos.length;
+            statusEl.innerText = "ZOOMING MEMORY";
+            statusEl.style.color = "#00ffff";
+        }
+    } else if (inputState.isFist) {
+        targetState = 'TREE';
+        statusEl.innerText = "FORMING TREE";
+        statusEl.style.color = "#FFD700";
+    } else {
+        targetState = 'EXPLODE';
+        statusEl.innerText = "WANDERING STARS";
+        statusEl.style.color = "#ff4466";
+    }
+
+    const time = Date.now() * 0.001;
+    
+    // 视角控制：增加阻尼感
+    const targetRotY = (inputState.x - 0.5) * 1.2;
+    const targetRotX = (inputState.y - 0.5) * 0.8;
+    scene.rotation.y += (targetRotY - scene.rotation.y) * 0.04;
+    scene.rotation.x += (targetRotX - scene.rotation.x) * 0.04;
+
+    particles.forEach(mesh => {
+        const data = mesh.userData;
+        let tPos = new THREE.Vector3();
+        let tScale = data.baseScale.clone();
+        let tRot = mesh.rotation.clone();
+
+        // 持续自转
+        tRot.x += data.rotSpeed.x;
+        tRot.y += data.rotSpeed.y;
+        tRot.z += data.rotSpeed.z;
+
+        if (targetState === 'TREE') {
+            tPos.copy(data.treePos);
+            // 树形态下的呼吸浮动
+            tPos.y += Math.sin(time*1.5 + data.randomPhase)*0.8;
+            if(data.type === 'PHOTO') tScale.multiplyScalar(0.4); // 照片在树里变小
+        } 
+        else if (targetState === 'EXPLODE') {
+            tPos.copy(data.explodePos);
+            // 散开形态下的缓慢漂流
+            tPos.x += Math.sin(time*0.5 + data.randomPhase)*3;
+            tPos.y += Math.cos(time*0.6 + data.randomPhase)*3;
+            tPos.z += Math.sin(time*0.7 + data.randomPhase)*3;
+        }
+        else if (targetState === 'PHOTO') {
+            if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
+                // 选中照片：飞到面前
+                tPos.set(0, 0, CONFIG.camZ - 30);
+                tScale.multiplyScalar(4.0); // 放大更多
+                mesh.lookAt(camera.position);
+                mesh.renderOrder = 999;
+                // 停止自转，保持正对
+                tRot.copy(mesh.rotation);
+                
+                mesh.position.lerp(tPos, 0.08);
+                mesh.scale.lerp(tScale, 0.08);
+                // 不应用自转
+                return;
+            } else {
+                // 背景退后并散开
+                tPos.copy(data.explodePos).multiplyScalar(2.0);
+            }
+        }
+
+        // 平滑插值
+        mesh.position.lerp(tPos, 0.05);
+        mesh.scale.lerp(tScale, 0.08);
+        mesh.rotation.copy(tRot);
+        mesh.renderOrder = 0;
+    });
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    updateLogic();
+    composer.render();
+}
+
+// ================= 5. 初始化流程 =================
+
+function enableMouseMode() {
+    document.body.dataset.mode = 'mouse';
+    document.getElementById('hint-cam').classList.remove('active');
+    document.getElementById('hint-mouse').classList.add('active');
+    document.getElementById('status-text').innerText = "MOUSE MODE ACTIVE";
+    
+    const loader = document.getElementById('loader');
+    loader.style.opacity = 0;
+    setTimeout(() => loader.remove(), 800);
+}
+
+function initMediaPipe() {
+    const video = document.getElementById('input_video');
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(results => {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const lm = results.multiHandLandmarks[0];
+            inputState.isActive = true;
+            inputState.x = 1.0 - lm[9].x; 
+            inputState.y = lm[9].y;
+
+            const tips = [8, 12, 16, 20];
+            let avgDist = 0;
+            tips.forEach(i => avgDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y));
+            avgDist /= 4;
+            inputState.isFist = avgDist < 0.25;
+
+            const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+            inputState.isPinch = pinchDist < 0.05;
+            
+            // 手势操作会打断照片锁定
+            if (inputState.isFist || inputState.isPinch) {
+                deselectPhoto();
+            }
+        }
+    });
+
+    const cam = new Camera(video, {
+        onFrame: async () => { await hands.send({image: video}); },
+        width: 640, height: 480
+    });
+    
+    cam.start()
+        .then(() => {
+            document.body.dataset.mode = 'camera';
+            document.getElementById('hint-cam').classList.add('active');
+            const loader = document.getElementById('loader');
+            loader.style.opacity = 0;
+            setTimeout(() => loader.remove(), 800);
+        })
+        .catch((err) => {
+            console.warn("Camera failed/denied:", err);
+            enableMouseMode();
+        });
+}
+
+// 启动：先获取 GCS 列表，成功后再初始化 3D 和 AI
+fetchBucketPhotos();
+animate(); // 提前启动渲染循环防止黑屏
