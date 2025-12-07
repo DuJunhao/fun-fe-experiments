@@ -7,7 +7,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // ================= 配置 =================
 const CONFIG = {
-    particleCount: 600, 
+    particleCount: 800, // 粒子数量加一点，让树更茂密
     bucketXmlUrl: "https://storage.googleapis.com/beautiful-days/?prefix=christa/", 
     publicBaseUrl: "https://static.refinefuture.com/", 
     treeHeight: 90,
@@ -16,7 +16,8 @@ const CONFIG = {
     colors: { 
         gold: 0xFFD700,
         red: 0xC41E3A,    
-        green: 0x2F4F4F,  
+        green: 0x053505,  // 深森林绿
+        leafGreen: 0x2E8B57, // 松针绿
         white: 0xFFFFFF,
         emissiveGold: 0xAA8800
     }
@@ -27,9 +28,7 @@ let scene, camera, renderer, composer;
 let particles = []; 
 let photos = []; 
 let targetState = 'EXPLODE'; 
-// 【核心统一】：所有交互都只修改这个 ID，-1 代表没选中
-let activePhotoIdx = -1; 
-
+let activePhotoIdx = -1;
 let imageList = []; 
 let isCameraMode = false;
 
@@ -39,10 +38,9 @@ const mouseVector = new THREE.Vector2();
 const inputState = {
     x: 0.5, y: 0.5,
     isFist: false,
-    mouseLocked: false, // 鼠标强制锁定
+    mouseLockedPhoto: false,
     isPinch: false,
-    zoomLevel: 3.5,     // 动态缩放系数
-    lastPinchTime: 0
+    zoomLevel: 3.5 
 };
 
 const textureLoader = new THREE.TextureLoader();
@@ -64,7 +62,7 @@ const loadingTex = createTextTexture("LOADING...");
 // ================= 1. 启动入口 =================
 async function fetchBucketPhotos() {
     const loaderText = document.getElementById('loader-text');
-    // 强制保险：3秒后移除loading
+    // 强制保险
     setTimeout(() => {
         const loader = document.getElementById('loader');
         if(loader) { loader.style.opacity = 0; setTimeout(() => loader.remove(), 500); }
@@ -88,16 +86,17 @@ async function fetchBucketPhotos() {
         if (imageList.length === 0) throw new Error("No images found");
         if(loaderText) loaderText.innerText = `LOADED ${imageList.length} PHOTOS`;
     } catch (e) {
-        console.warn("Offline mode", e);
+        console.warn("Using offline mode", e);
         if(loaderText) loaderText.innerText = "OFFLINE MODE";
         for(let i=1; i<=6; i++) imageList.push(`christa/${i}.jpg`);
     }
     
     initThree();
-    initMediaPipeSafe(); 
+    // 延迟启动 MediaPipe
+    setTimeout(initMediaPipeSafe, 100);
 }
 
-// ================= 2. 交互逻辑 (鼠标) =================
+// ================= 2. 交互逻辑 =================
 
 function getIntersectedPhoto(clientX, clientY) {
     const mv = new THREE.Vector2();
@@ -120,7 +119,7 @@ function onGlobalMouseMove(event) {
     inputState.x = event.clientX / window.innerWidth;
     inputState.y = event.clientY / window.innerHeight;
     
-    if (activePhotoIdx === -1) {
+    if (!inputState.mouseLockedPhoto) {
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
         document.body.style.cursor = hit ? 'pointer' : 'default';
     }
@@ -132,21 +131,17 @@ function onGlobalMouseDown(event) {
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
     if (targetPhoto) {
-        // [点击照片]
-        inputState.mouseLocked = true;
-        activePhotoIdx = targetPhoto.userData.idx; // 统一更新 ID
+        inputState.mouseLockedPhoto = true;
+        activePhotoIdx = targetPhoto.userData.idx;
         inputState.isFist = false; 
         inputState.zoomLevel = 4.0; 
         updateStatusText("MEMORY LOCKED", "#00ffff");
     } else {
-        // [点击空白]
-        if (activePhotoIdx !== -1) {
-            // 解锁
-            inputState.mouseLocked = false;
+        if (inputState.mouseLockedPhoto) {
+            inputState.mouseLockedPhoto = false;
             activePhotoIdx = -1;
             updateStatusText("GALAXY MODE");
         } else {
-            // 聚合
             inputState.isFist = true;
             updateStatusText("FORMING TREE", "#FFD700");
         }
@@ -154,15 +149,14 @@ function onGlobalMouseDown(event) {
 }
 
 function onGlobalMouseUp(event) {
-    // 只有没锁定时，松开才停止聚合
-    if (!inputState.mouseLocked) {
+    if (!inputState.mouseLockedPhoto) {
         inputState.isFist = false;
-        if(activePhotoIdx === -1) updateStatusText("GALAXY MODE");
+        updateStatusText("GALAXY MODE");
     }
 }
 
 function onGlobalWheel(event) {
-    if (activePhotoIdx !== -1) {
+    if (targetState === 'PHOTO') {
         inputState.zoomLevel += event.deltaY * -0.005;
         inputState.zoomLevel = Math.max(1.5, Math.min(8.0, inputState.zoomLevel));
     }
@@ -190,10 +184,11 @@ function initThree() {
     renderer = new THREE.WebGLRenderer({ antialias: true, stencil: false, depth: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.NoToneMapping; // 保证照片清晰
+    // 保持关闭 ToneMapping，确保照片清晰
+    renderer.toneMapping = THREE.NoToneMapping; 
     container.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambient);
     const mainLight = new THREE.DirectionalLight(0xFFF5E1, 2);
     mainLight.position.set(20, 50, 50);
@@ -201,11 +196,11 @@ function initThree() {
     const centerLight = new THREE.PointLight(0xFFD700, 5, 150);
     scene.add(centerLight);
     
-    // 辉光
+    // 辉光配置
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
     bloomPass.threshold = 0.9; 
-    bloomPass.strength = 1.8; 
+    bloomPass.strength = 1.5; 
     bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
@@ -225,17 +220,26 @@ function initThree() {
 }
 
 function createChristmasObjects() {
+    // === 材质定义 ===
+    // 1. 松针 (绿色，不发光，粗糙) -> 树的主体
+    const matLeaf = new THREE.MeshLambertMaterial({ 
+        color: CONFIG.colors.leafGreen, 
+    });
+
+    // 2. 装饰品 (发光，光滑)
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0 });
-    const matRed = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
-    const matGreen = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.green, metalness: 0.1, roughness: 0.8 });
+    const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
+    const matGreenMatte = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.green, metalness: 0.1, roughness: 0.8 });
     const matWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }); 
     const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 1.2 });
 
-    const sphereGeo = new THREE.SphereGeometry(1.3, 24, 24); 
+    // === 几何体 ===
+    const leafGeo = new THREE.TetrahedronGeometry(2.0); // 松针形状
+    const sphereGeo = new THREE.SphereGeometry(1.3, 16, 16); 
     const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); 
     const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); 
     const starGeo = new THREE.OctahedronGeometry(1.8); 
-
+    // 袜子帽子组件
     const hatConeGeo = new THREE.ConeGeometry(1.2, 3, 16);
     const hatBrimGeo = new THREE.TorusGeometry(1.2, 0.3, 12, 24);
     const stockLegGeo = new THREE.CylinderGeometry(0.8, 0.8, 2.5, 12);
@@ -245,40 +249,58 @@ function createChristmasObjects() {
         let mesh;
         const type = Math.random();
 
-        if (type < 0.3) mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRed);
-        else if (type < 0.5) {
-            const group = new THREE.Group();
-            const box = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRed : matGreen);
-            group.add(box);
-            const ribbon = new THREE.Mesh(new THREE.BoxGeometry(2.3, 2.3, 0.3), matGold);
-            group.add(ribbon);
-            mesh = group;
-        } else if (type < 0.65) {
-            mesh = new THREE.Mesh(candyGeo, matCandy);
-            mesh.rotation.set((Math.random()-0.5),(Math.random()-0.5), Math.random()*Math.PI);
-        } else if (type < 0.80) {
-            mesh = new THREE.Mesh(starGeo, matGold);
-        } else if (type < 0.90) {
-            const group = new THREE.Group();
-            const cone = new THREE.Mesh(hatConeGeo, matRed);
-            const brim = new THREE.Mesh(hatBrimGeo, matWhite);
-            brim.position.y = -1.5; brim.rotation.x = Math.PI/2;
-            group.add(cone); group.add(brim);
-            mesh = group;
-        } else {
-            const group = new THREE.Group();
-            const leg = new THREE.Mesh(stockLegGeo, matRed);
-            const foot = new THREE.Mesh(stockFootGeo, matRed);
-            foot.rotation.x = Math.PI / 2; foot.position.set(0, -1.25, 0.5);
-            const cuff = new THREE.Mesh(hatBrimGeo, matWhite);
-            cuff.position.y = 1.25; cuff.rotation.x = Math.PI / 2; cuff.scale.set(0.8, 0.8, 0.8);
-            group.add(leg); group.add(foot); group.add(cuff);
-            mesh = group;
+        // 【核心修改】60% 概率生成松针，构建树的体积感
+        if (type < 0.60) {
+            mesh = new THREE.Mesh(leafGeo, matLeaf);
+            // 随机旋转，模拟自然树叶
+            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+            mesh.scale.setScalar(0.8 + Math.random() * 0.5);
+            // 标记为 LEAF，初始化位置时会稍微紧凑一些
+            initParticle(mesh, 'LEAF', i);
+        } 
+        // 剩下的 40% 是装饰品
+        else {
+            if (type < 0.70) {
+                // 球
+                mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
+            } else if (type < 0.80) {
+                // 礼物盒
+                const group = new THREE.Group();
+                const box = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRedShiny : matGreenMatte);
+                group.add(box);
+                const ribbon = new THREE.Mesh(new THREE.BoxGeometry(2.3, 2.3, 0.3), matGold);
+                group.add(ribbon);
+                mesh = group;
+            } else if (type < 0.88) {
+                // 糖果棒
+                mesh = new THREE.Mesh(candyGeo, matCandy);
+                mesh.rotation.set((Math.random()-0.5),(Math.random()-0.5), Math.random()*Math.PI);
+            } else if (type < 0.93) {
+                // 星星
+                mesh = new THREE.Mesh(starGeo, matGold);
+                mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+            } else if (type < 0.97) {
+                // 圣诞帽
+                const group = new THREE.Group();
+                const cone = new THREE.Mesh(hatConeGeo, matRedShiny);
+                const brim = new THREE.Mesh(hatBrimGeo, matWhite);
+                brim.position.y = -1.5; brim.rotation.x = Math.PI/2;
+                group.add(cone); group.add(brim);
+                mesh = group;
+            } else {
+                // 圣诞袜
+                const group = new THREE.Group();
+                const leg = new THREE.Mesh(stockLegGeo, matRedShiny);
+                const foot = new THREE.Mesh(stockFootGeo, matRedShiny);
+                foot.rotation.x = Math.PI / 2; foot.position.set(0, -1.25, 0.5);
+                const cuff = new THREE.Mesh(hatBrimGeo, matWhite);
+                cuff.position.y = 1.25; cuff.rotation.x = Math.PI / 2; cuff.scale.set(0.8, 0.8, 0.8);
+                group.add(leg); group.add(foot); group.add(cuff);
+                mesh = group;
+            }
+            initParticle(mesh, 'DECOR', i);
         }
         
-        const scaleVar = 0.8 + Math.random() * 0.4;
-        mesh.scale.set(scaleVar, scaleVar, scaleVar);
-        initParticle(mesh, 'DECOR', i);
         scene.add(mesh);
         particles.push(mesh);
     }
@@ -291,7 +313,6 @@ function createChristmasObjects() {
     });
     
     imageList.forEach((filename, i) => {
-        // 照片材质：Basic + toneMapped: false = 绝对清晰
         const mat = new THREE.MeshBasicMaterial({ 
             map: loadingTex, 
             side: THREE.DoubleSide,
@@ -325,7 +346,12 @@ function createChristmasObjects() {
 function initParticle(mesh, type, idx) {
     const h = Math.random();
     const angle = h * Math.PI * 25 + idx * 0.1; 
-    const r = (1.05 - h) * 40; 
+    
+    // 【形态微调】如果是树叶(LEAF)，让它们更紧凑，形成内部体积
+    let radiusMod = 1.0;
+    if (type === 'LEAF') radiusMod = 0.85;
+
+    const r = ((1.05 - h) * 40) * radiusMod; 
     const treePos = new THREE.Vector3(Math.cos(angle)*r, (h-0.5)*CONFIG.treeHeight, Math.sin(angle)*r);
     
     const theta = Math.random() * Math.PI * 2;
@@ -378,10 +404,9 @@ function createMerryChristmas() {
     });
 }
 
-// ================= 4. 动画循环 (统一状态处理) =================
+// ================= 4. 动画循环 =================
 function updateLogic() {
-    // 状态机优先级
-    if (activePhotoIdx !== -1) {
+    if (inputState.mouseLockedPhoto) {
         targetState = 'PHOTO';
     } else if (inputState.isFist) {
         targetState = 'TREE';
@@ -421,7 +446,6 @@ function updateLogic() {
                 tPos.set(0, 0, CONFIG.camZ - 40); 
                 mesh.lookAt(camera.position); 
                 mesh.rotation.set(0,0,0);
-                // 【核心修复】应用手势捏合的 ZoomLevel
                 tScale.multiplyScalar(inputState.zoomLevel); 
             } else {
                 tPos.copy(data.explodePos).multiplyScalar(2.0); 
@@ -446,7 +470,7 @@ function onWindowResize() {
     composer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ================= 5. MediaPipe (防崩 + 捏合修复) =================
+// ================= 5. MediaPipe =================
 async function initMediaPipeSafe() {
     const video = document.getElementById('input_video');
     
@@ -475,7 +499,7 @@ async function initMediaPipeSafe() {
             if (!isCameraMode) return; 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
-                if (activePhotoIdx === -1) {
+                if (!inputState.mouseLockedPhoto) {
                     inputState.x = 1.0 - lm[9].x; 
                     inputState.y = lm[9].y;
                 }
@@ -484,29 +508,21 @@ async function initMediaPipeSafe() {
                 tips.forEach(i => avgDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y));
                 inputState.isFist = (avgDist / 4) < 0.22;
                 
-                // 捏合检测
                 const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
                 inputState.isPinch = pinchDist < 0.05;
                 
-                // 【核心修复】手势缩放逻辑
                 if (inputState.isPinch) {
                     const now = Date.now();
-                    // 1. 如果没看照片，先随机选一张开始看
-                    if (activePhotoIdx === -1 && (now - inputState.lastPinchTime > 1000)) {
-                        activePhotoIdx = Math.floor(Math.random() * photos.length);
-                        inputState.mouseLocked = true; // 锁定状态
-                        updateStatusText("HAND LOCKED MEMORY", "#00ffff");
+                    if (now - inputState.lastPinchTime > 1000 && targetState !== 'PHOTO') {
+                        activePhotoIdx = (activePhotoIdx + 1) % photos.length; 
                         inputState.lastPinchTime = now;
                     }
-                    
-                    // 2. 实时缩放：映射捏合距离到 zoomLevel
-                    let scale = (pinchDist - 0.02) * 50.0;
-                    inputState.zoomLevel = Math.max(1.0, Math.min(6.0, scale));
+                    let scale = (pinchDist - 0.02) * 40.0;
+                    inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
                 }
-
-                if (inputState.isFist) {
-                    inputState.mouseLocked = false;
-                    activePhotoIdx = -1;
+                
+                if (inputState.isFist || inputState.isPinch) {
+                    inputState.mouseLockedPhoto = false;
                 }
             }
         });
