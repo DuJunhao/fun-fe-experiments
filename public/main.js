@@ -7,7 +7,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // ================= 配置 =================
 const CONFIG = {
-    particleCount: 650, 
+    particleCount: 600, 
     bucketXmlUrl: "https://storage.googleapis.com/beautiful-days/?prefix=christa/", 
     publicBaseUrl: "https://static.refinefuture.com/", 
     treeHeight: 90,
@@ -39,8 +39,7 @@ const inputState = {
     isFist: false,
     mouseLockedPhoto: false,
     isPinch: false,
-    zoomLevel: 3.5, // 【新增】默认放大倍数
-    lastPinchTime: 0 // 【新增】防止捏合时频繁切换照片
+    zoomLevel: 3.5 
 };
 
 const textureLoader = new THREE.TextureLoader();
@@ -51,9 +50,9 @@ function createTextTexture(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 512; canvas.height = 680;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0,0,512,680);
-    ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 10; ctx.strokeRect(20,20,472,640);
-    ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#d4af37'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#111'; ctx.fillRect(0,0,512,680);
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 10; ctx.strokeRect(20,20,472,640);
+    ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
     ctx.fillText(text, 256, 340);
     return new THREE.CanvasTexture(canvas);
 }
@@ -88,7 +87,7 @@ async function fetchBucketPhotos() {
     initMediaPipe(); 
 }
 
-// ================= 2. 交互逻辑 =================
+// ================= 2. 交互逻辑 (修复) =================
 
 function getIntersectedPhoto(clientX, clientY) {
     const mv = new THREE.Vector2();
@@ -96,9 +95,11 @@ function getIntersectedPhoto(clientX, clientY) {
     mv.y = -(clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mv, camera);
     const intersects = raycaster.intersectObjects(photos, true);
+    
     if (intersects.length > 0) {
         let hitObj = intersects[0].object;
-        while(hitObj) {
+        // 向上冒泡查找直到找到照片根节点
+        while(hitObj && hitObj !== scene) {
             if (hitObj.userData && hitObj.userData.type === 'PHOTO') return hitObj;
             hitObj = hitObj.parent;
         }
@@ -107,13 +108,9 @@ function getIntersectedPhoto(clientX, clientY) {
 }
 
 function onGlobalMouseMove(event) {
-    mouseVector.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouseVector.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-    if (!isCameraMode) {
-        inputState.x = event.clientX / window.innerWidth;
-        inputState.y = event.clientY / window.innerHeight;
-    }
+    // 始终更新鼠标坐标，确保没摄像头时能控制视角
+    inputState.x = event.clientX / window.innerWidth;
+    inputState.y = event.clientY / window.innerHeight;
     
     if (!inputState.mouseLockedPhoto) {
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
@@ -122,21 +119,26 @@ function onGlobalMouseMove(event) {
 }
 
 function onGlobalMouseDown(event) {
-    if (event.button !== 0) return; 
+    if (event.button !== 0) return; // 只左键
+
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
     if (targetPhoto) {
+        // [点击照片] -> 强制锁定
         inputState.mouseLockedPhoto = true;
         activePhotoIdx = targetPhoto.userData.idx;
-        inputState.isFist = false;
-        inputState.zoomLevel = 4.0; // 鼠标点击默认放大倍数
+        inputState.isFist = false; // 确保不聚合
+        inputState.zoomLevel = 4.0; // 重置缩放
         updateStatusText("MEMORY LOCKED", "#00ffff");
     } else {
+        // [点击空白]
         if (inputState.mouseLockedPhoto) {
+            // 如果之前锁定了 -> 解锁
             inputState.mouseLockedPhoto = false;
             activePhotoIdx = -1;
             updateStatusText("GALAXY MODE");
         } else {
+            // 如果没锁定 -> 聚合 (移除所有模式判断，鼠标按下就聚合)
             inputState.isFist = true;
             updateStatusText("FORMING TREE", "#FFD700");
         }
@@ -144,18 +146,16 @@ function onGlobalMouseDown(event) {
 }
 
 function onGlobalMouseUp(event) {
+    // 只有在没锁定照片时，松开鼠标才停止聚合
     if (!inputState.mouseLockedPhoto) {
         inputState.isFist = false;
         updateStatusText("GALAXY MODE");
     }
 }
 
-// 【新增】鼠标滚轮控制缩放
 function onGlobalWheel(event) {
-    // 只有在选中照片时才允许缩放
     if (targetState === 'PHOTO') {
         inputState.zoomLevel += event.deltaY * -0.005;
-        // 限制缩放范围
         inputState.zoomLevel = Math.max(1.5, Math.min(8.0, inputState.zoomLevel));
     }
 }
@@ -183,21 +183,20 @@ function initThree() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1; 
+    renderer.toneMappingExposure = 1.0; 
     container.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.2);
     scene.add(ambient);
-    const mainLight = new THREE.DirectionalLight(0xFFF5E1, 3);
+    const mainLight = new THREE.DirectionalLight(0xFFF5E1, 2);
     mainLight.position.set(20, 50, 50);
     scene.add(mainLight);
-    const centerLight = new THREE.PointLight(0xFFD700, 5, 150);
-    scene.add(centerLight);
     
     const renderPass = new RenderPass(scene, camera);
+    // 【核心修复】提高阈值到 0.85，只有非常亮的东西才发光，防止照片过曝
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.3; 
-    bloomPass.strength = 1.5; 
+    bloomPass.threshold = 0.85; 
+    bloomPass.strength = 0.6; // 稍微降低强度
     bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
@@ -209,25 +208,19 @@ function initThree() {
     window.addEventListener('mousemove', onGlobalMouseMove);
     window.addEventListener('mousedown', onGlobalMouseDown);
     window.addEventListener('mouseup', onGlobalMouseUp);
-    window.addEventListener('wheel', onGlobalWheel); // 绑定滚轮
-    window.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        inputState.mouseLockedPhoto = false;
-        inputState.isFist = false;
-        activePhotoIdx = -1;
-        updateStatusText("GALAXY MODE");
-    });
+    window.addEventListener('wheel', onGlobalWheel);
     window.addEventListener('resize', onWindowResize);
+    window.addEventListener('contextmenu', e => e.preventDefault());
     
     animate();
 }
 
 function createChristmasObjects() {
-    const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.5 });
-    const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 0.4 });
-    const matGreenMatte = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.green, metalness: 0.1, roughness: 0.8 });
+    const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0 }); // 调高Emissive确保粒子发光
+    const matRed = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0xff0000, emissiveIntensity: 1.5 });
+    const matGreen = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.green, metalness: 0.1, roughness: 0.8 });
     const matWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }); 
-    const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 0.6 });
+    const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 1.0 });
 
     const sphereGeo = new THREE.SphereGeometry(1.3, 24, 24); 
     const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); 
@@ -244,32 +237,31 @@ function createChristmasObjects() {
         const type = Math.random();
 
         if (type < 0.3) {
-            mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
+            mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRed);
         } else if (type < 0.5) {
-            mesh = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRedShiny : matGreenMatte);
-            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+            const group = new THREE.Group();
+            const box = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRed : matGreen);
+            group.add(box);
+            mesh = group;
         } else if (type < 0.65) {
             mesh = new THREE.Mesh(candyGeo, matCandy);
             mesh.rotation.set((Math.random()-0.5),(Math.random()-0.5), Math.random()*Math.PI);
         } else if (type < 0.80) {
             mesh = new THREE.Mesh(starGeo, matGold);
-            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
         } else if (type < 0.90) {
-            mesh = new THREE.Group();
-            const cone = new THREE.Mesh(hatConeGeo, matRedShiny);
+            const group = new THREE.Group();
+            const cone = new THREE.Mesh(hatConeGeo, matRed);
             const brim = new THREE.Mesh(hatBrimGeo, matWhite);
-            brim.position.y = -1.5; brim.rotation.x = Math.PI / 2;
-            mesh.add(cone); mesh.add(brim);
-            mesh.rotation.z = (Math.random() - 0.5) * 0.5;
+            brim.position.y = -1.5; brim.rotation.x = Math.PI/2;
+            group.add(cone); group.add(brim);
+            mesh = group;
         } else {
-            mesh = new THREE.Group();
-            const leg = new THREE.Mesh(stockLegGeo, matRedShiny);
-            const foot = new THREE.Mesh(stockFootGeo, matRedShiny);
+            const group = new THREE.Group();
+            const leg = new THREE.Mesh(stockLegGeo, matRed);
+            const foot = new THREE.Mesh(stockFootGeo, matRed);
             foot.rotation.x = Math.PI / 2; foot.position.set(0, -1.25, 0.5);
-            const cuff = new THREE.Mesh(hatBrimGeo, matWhite);
-            cuff.position.y = 1.25; cuff.rotation.x = Math.PI / 2; cuff.scale.set(0.8, 0.8, 0.8);
-            mesh.add(leg); mesh.add(foot); mesh.add(cuff);
-            mesh.rotation.set(Math.random()*0.5, Math.random()*Math.PI, 0);
+            group.add(leg); group.add(foot);
+            mesh = group;
         }
         
         const scaleVar = 0.8 + Math.random() * 0.4;
@@ -279,28 +271,39 @@ function createChristmasObjects() {
         particles.push(mesh);
     }
 
+    // === 照片卡片 (修复材质) ===
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.5); 
-    const borderMat = new THREE.MeshPhysicalMaterial({
-        color: CONFIG.colors.gold, metalness: 0.8, roughness: 0.3,
-        emissive: 0x000000, emissiveIntensity: 0.0
+    
+    // 边框不发光，普通金属
+    const borderMat = new THREE.MeshStandardMaterial({
+        color: 0xdaa520, // 沉稳的金
+        metalness: 0.6,
+        roughness: 0.4
     });
     
     imageList.forEach((filename, i) => {
-        const mat = new THREE.MeshBasicMaterial({ map: loadingTex, side: THREE.DoubleSide });
+        // 【关键修复】toneMapped: false 确保照片原色显示，不受光照过曝影响
+        const mat = new THREE.MeshBasicMaterial({ 
+            map: loadingTex, 
+            side: THREE.DoubleSide,
+            toneMapped: false 
+        });
+        
         const url = CONFIG.publicBaseUrl + filename;
         textureLoader.load(url, (tex) => {
             tex.colorSpace = THREE.SRGBColorSpace;
             mat.map = tex; mat.needsUpdate = true;
-        }, undefined, () => { mat.map = createTextTexture("LOAD FAILED"); });
+        }, undefined, () => {
+            mat.map = createTextTexture("LOAD FAILED");
+        });
 
         const mesh = new THREE.Mesh(photoGeo, mat);
         mesh.userData.type = 'PHOTO';
         mesh.userData.idx = i;
-        mesh.position.z = 0.05;
 
         const border = new THREE.Mesh(borderGeo, borderMat);
-        border.position.z = -0.5; 
+        border.position.z = -0.3; // 放在后面
         mesh.add(border);
         
         initParticle(mesh, 'PHOTO', i);
@@ -313,7 +316,7 @@ function createChristmasObjects() {
 function initParticle(mesh, type, idx) {
     const h = Math.random();
     const angle = h * Math.PI * 25 + idx * 0.1; 
-    const r = (1.0 - h) * 45 + 2; 
+    const r = (1.05 - h) * 40; 
     const treePos = new THREE.Vector3(Math.cos(angle)*r, (h-0.5)*CONFIG.treeHeight, Math.sin(angle)*r);
     
     const theta = Math.random() * Math.PI * 2;
@@ -325,12 +328,12 @@ function initParticle(mesh, type, idx) {
         rad * Math.cos(phi)
     );
 
-    mesh.userData = Object.assign(mesh.userData, {
-        treePos, explodePos,
+    mesh.userData = {
+        type, idx, treePos, explodePos,
         rotSpeed: {x:Math.random()*0.02, y:Math.random()*0.02, z:Math.random()*0.02},
         baseScale: mesh.scale.clone(),
         randomPhase: Math.random() * 10
-    });
+    };
     mesh.position.copy(explodePos);
 }
 
@@ -339,10 +342,10 @@ function createMerryChristmas() {
     loader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', function (font) {
         const textMat = new THREE.MeshPhysicalMaterial({
             color: CONFIG.colors.gold, metalness: 1.0, roughness: 0.15,
-            emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.6,
+            emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0, // 字体要亮
             clearcoat: 1.0
         });
-        const settings = { font: font, size: 5, height: 1.2, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.1, bevelSegments: 3 };
+        const settings = { font: font, size: 5, height: 1.2, bevelEnabled: true, bevelThickness: 0.3, bevelSize: 0.15, bevelSegments: 3 };
 
         const merryGeo = new TextGeometry('MERRY', settings);
         const chrisGeo = new TextGeometry('CHRISTMAS', settings);
@@ -354,10 +357,10 @@ function createMerryChristmas() {
         const group = new THREE.Group();
         group.add(mMesh); group.add(cMesh);
 
-        const explodePos = new THREE.Vector3(0, CONFIG.treeHeight + 60, 0);
+        const explodePos = new THREE.Vector3(0, CONFIG.treeHeight + 50, 0);
         group.userData = {
-            type: 'TEXT', treePos: new THREE.Vector3(0, CONFIG.treeHeight/2 + 15, 0),
-            explodePos: explodePos, rotSpeed: {x:0,y:0.01,z:0},
+            type: 'TEXT', treePos: new THREE.Vector3(0, CONFIG.treeHeight/2 + 18, 0),
+            explodePos: explodePos, rotSpeed: {x:0, y:0.01, z:0},
             baseScale: new THREE.Vector3(1,1,1), randomPhase: 0
         };
         group.position.copy(explodePos);
@@ -366,11 +369,9 @@ function createMerryChristmas() {
     });
 }
 
-// ================= 4. 动画循环 (修复缩放) =================
+// ================= 4. 动画循环 =================
 function updateLogic() {
     if (inputState.mouseLockedPhoto) {
-        targetState = 'PHOTO';
-    } else if (inputState.isPinch) {
         targetState = 'PHOTO';
     } else if (inputState.isFist) {
         targetState = 'TREE';
@@ -380,6 +381,7 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
     
+    // 非锁定状态下，背景随鼠标微动
     if (targetState !== 'PHOTO') {
         const targetRotY = (inputState.x - 0.5) * 1.0;
         const targetRotX = (inputState.y - 0.5) * 0.5;
@@ -410,9 +412,7 @@ function updateLogic() {
                 tPos.set(0, 0, CONFIG.camZ - 40); 
                 mesh.lookAt(camera.position); 
                 mesh.rotation.set(0,0,0);
-                
-                // 【核心修复】应用动态缩放级别
-                // 使用 inputState.zoomLevel 来控制当前照片的大小
+                // 应用动态缩放
                 tScale.multiplyScalar(inputState.zoomLevel); 
             } else {
                 tPos.copy(data.explodePos).multiplyScalar(2.0); 
@@ -441,8 +441,9 @@ function onWindowResize() {
 function initMediaPipe() {
     const video = document.getElementById('input_video');
     
+    // 静默检测摄像头
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        enableMouseMode("MOUSE MODE ACTIVE");
+        enableMouseMode("MOUSE MODE (NO CAM)");
         return;
     }
 
@@ -463,26 +464,15 @@ function initMediaPipe() {
             tips.forEach(i => avgDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y));
             inputState.isFist = (avgDist / 4) < 0.22;
             
-            // 【核心修复】捏合手势映射到缩放
             const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
             inputState.isPinch = pinchDist < 0.05;
-
-            // 如果正在捏合，动态更新 zoomLevel
+            
+            // 捏合缩放映射
             if (inputState.isPinch) {
-                // 如果是新的一次捏合（之前没捏），切换照片
-                const now = Date.now();
-                if (now - inputState.lastPinchTime > 1000 && targetState !== 'PHOTO') {
-                    // 随机切换或顺序切换
-                    activePhotoIdx = (activePhotoIdx + 1) % photos.length; 
-                }
-                inputState.lastPinchTime = now;
-
-                // 映射逻辑：距离越远(0.15)，倍数越大(6.0)
-                // 距离越近(0.02)，倍数越小(1.5)
                 let scale = (pinchDist - 0.02) * 40.0;
                 inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
             }
-            
+
             if (inputState.isFist || inputState.isPinch) {
                 inputState.mouseLockedPhoto = false;
             }
@@ -503,8 +493,8 @@ function initMediaPipe() {
             if(loader) { loader.style.opacity = 0; setTimeout(() => loader.remove(), 500); }
         })
         .catch(err => {
-            console.error("Camera denied/failed:", err);
-            enableMouseMode("CAMERA FAILED - MOUSE MODE");
+            // 静默失败
+            enableMouseMode("MOUSE MODE (CAM BLOCKED)");
         });
 }
 
