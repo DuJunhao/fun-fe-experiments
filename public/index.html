@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>奢华流金圣诞树 AR</title>
+    <title>奢华回忆圣诞树 AR</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; user-select: none; }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
@@ -11,29 +11,31 @@
         /* UI 面板 */
         #ui-panel {
             position: absolute; top: 20px; left: 20px; width: 180px;
-            background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(8px);
-            padding: 15px; border-radius: 8px; color: #d4af37; z-index: 10;
-            border: 1px solid rgba(212, 175, 55, 0.3);
-            box-shadow: 0 0 20px rgba(212, 175, 55, 0.1);
+            background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(10px);
+            padding: 15px; border-radius: 10px; color: #d4af37; z-index: 10;
+            border: 1px solid rgba(212, 175, 55, 0.4);
+            box-shadow: 0 0 25px rgba(212, 175, 55, 0.2);
         }
-        .ui-label { font-size: 10px; letter-spacing: 2px; color: #888; margin-bottom: 8px; font-weight: bold; }
-        .status-text { font-size: 14px; color: #fff; text-shadow: 0 0 5px gold; }
+        .ui-label { font-size: 10px; letter-spacing: 2px; color: #aaa; margin-bottom: 8px; font-weight: bold; }
+        .status-text { font-size: 14px; color: #fff; text-shadow: 0 0 8px gold; font-weight: bold;}
 
         /* 底部照片栏 */
         #gallery-container {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 110px;
-            background: linear-gradient(to top, #000, transparent);
-            display: flex; align-items: center; overflow-x: auto; padding: 0 20px; z-index: 10; gap: 15px;
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 120px;
+            background: linear-gradient(to top, #000 20%, transparent);
+            display: flex; align-items: center; overflow-x: auto; padding: 0 25px; z-index: 10; gap: 15px;
         }
+        /* 隐藏滚动条 */
+        #gallery-container::-webkit-scrollbar { display: none; }
         .gallery-item {
-            height: 70px; width: 70px; object-fit: cover;
-            border-radius: 4px; cursor: pointer; border: 1px solid #444;
-            transition: all 0.3s; flex-shrink: 0; opacity: 0.6;
+            height: 75px; width: 75px; object-fit: cover;
+            border-radius: 6px; cursor: pointer; border: 2px solid rgba(212, 175, 55, 0.3);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); flex-shrink: 0; opacity: 0.7;
         }
-        .gallery-item:hover { transform: scale(1.1); opacity: 1; border-color: gold; }
-        .gallery-item.selected { border-color: gold; opacity: 1; box-shadow: 0 0 15px gold; transform: scale(1.1); }
+        .gallery-item:hover { transform: scale(1.15) translateY(-5px); opacity: 1; border-color: gold; }
+        .gallery-item.selected { border-color: gold; opacity: 1; box-shadow: 0 0 20px gold; transform: scale(1.15) translateY(-5px); }
         
-        #loading-text { color: #888; font-size: 12px; width: 100%; text-align: center; }
+        #loading-text { color: #d4af37; font-size: 14px; width: 100%; text-align: center; letter-spacing: 1px;}
         
         video { display: none; }
     </style>
@@ -41,19 +43,19 @@
 <body>
 
     <div id="ui-panel">
-        <div class="ui-label">STATUS</div>
+        <div class="ui-label">SYSTEM STATUS</div>
         <div id="status-text" class="status-text">INITIALIZING...</div>
-        <div class="ui-label" style="margin-top:15px">GESTURES</div>
-        <div style="font-size:12px; color:#aaa;">✊ 握拳: 聚合成树</div>
-        <div style="font-size:12px; color:#aaa;">🖐 张开: 金粉爆炸</div>
-        <div style="font-size:12px; color:#aaa;">👌 捏合: 抓取照片</div>
+        <div class="ui-label" style="margin-top:20px">GESTURE CONTROL</div>
+        <div style="font-size:12px; color:#ccc; margin-bottom:4px;">✊ 握拳: 聚合回忆树</div>
+        <div style="font-size:12px; color:#ccc; margin-bottom:4px;">🖐 张开: 金色爆发</div>
+        <div style="font-size:12px; color:#ccc;">👌 捏合: 检视照片</div>
     </div>
 
     <div id="canvas-container"></div>
     <video id="input_video"></video>
 
     <div id="gallery-container">
-        <div id="loading-text">正在从 Cloud Run 获取列表...</div>
+        <div id="loading-text">正在连接云端回忆库...</div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -62,45 +64,44 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
     <script>
-        // --- 素材 Base64 (金光、礼物、信封) ---
-        // 简单的圆形光晕
+        // --- 素材 Base64 (金光点) ---
         const SPARK_TEX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAyJpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczp4bXBNTT0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL21tLyIgeG1sbnM6c3RSZWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZVJlZiMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENTNSBNYWNpbnRvc2giIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6NDU4NEEwOUQwN0lDMTFFMzg2MzVEOEYxQjE0OEUwNTYiIHhtcE1NOkRvY3VtZW50SUQ9InhtcC5kaWQ6NDU4NEEwOUUwN0lDMTFFMzg2MzVEOEYxQjE0OEUwNTYiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDo0NTg0QTA5QjA3SUMxMUUzODYzNUQ4RjFCMTQ4RTA1NiIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDo0NTg0QTA5QzA3SUMxMUUzODYzNUQ4RjFCMTQ4RTA1NiIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/Pp/b/CEAAABESURBVHja7M4xEQAwDAOxuVf6Z4wKbLgwF/B4Z2a9930eP378+PHjx48fP378+PHjx48fP378+PHjx48fP378+PHj/8YCDAD1ZQfR7B8r/QAAAABJRU5ErkJggg==";
-        // 礼物图标 (简易)
-        const GIFT_TEX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACACAMAAABiEdAAAAA1BMVEUAAACnej3aAAAASElEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADeBCAAAAF09CCwAAAAAElFTkSuQmCC"; 
-        // 信封图标 (简易)
-        const ENV_TEX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACACAMAAABiEdAAAAA1BMVEUAAACnej3aAAAASElEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADeBCAAAAF09CCwAAAAAElFTkSuQmCC";
 
         // ================= 全局变量 =================
-        let scene, camera, renderer, goldParticles, itemParticles, photoMesh;
-        let handOpenFactor = 0; // 0=树(握拳), 1=爆炸(张开)
+        let scene, camera, renderer, goldParticles, photoMesh;
+        // 存放所有照片粒子系统的数组
+        let photoParticleGroups = []; 
+        let handOpenFactor = 0; // 0=树, 1=爆炸
         let isMouseMode = false;
         let isPhotoMode = false;
         
-        // 粒子数量
-        const GOLD_COUNT = 25000;
-        const ITEM_COUNT = 300; 
+        const GOLD_COUNT = 30000;
+        // 每张照片生成多少个漂浮粒子
+        const PARTICLES_PER_PHOTO = 40; 
 
         // ================= Three.js 初始化 =================
         function initThree() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x000000, 0.001); // 黑色迷雾
+            // 稍微带点金色调的迷雾
+            scene.fog = new THREE.FogExp2(0x1a1a00, 0.0012); 
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-            camera.position.z = 100;
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+            camera.position.z = 120;
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            // 关键：开启物理光照感
             renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
             container.appendChild(renderer.domElement);
 
-            // 加载纹理
+            // 加载金光纹理
             const loader = new THREE.TextureLoader();
             const sparkTexture = loader.load(SPARK_TEX);
             
-            // --- 系统1: 金粉粒子 (组成树的主体) ---
+            // --- 系统1: 金粉主树体 ---
             const goldGeo = new THREE.BufferGeometry();
             const goldPos = new Float32Array(GOLD_COUNT * 3);
             const goldTarget = new Float32Array(GOLD_COUNT * 3);
@@ -111,12 +112,12 @@
                 const i3 = i*3;
                 goldPos[i3]=0; goldPos[i3+1]=0; goldPos[i3+2]=0;
                 
-                // 树形目标 (螺旋圆锥)
-                const h = Math.random(); // 0-1
-                const angle = h * Math.PI * 18; 
-                const r = (1-h) * 35 + Math.random()*2;
+                // 树形目标 (更紧密的螺旋圆锥)
+                const h = Math.random(); 
+                const angle = h * Math.PI * 22; 
+                const r = (1-h) * 38 + Math.random()*3;
                 goldTarget[i3] = Math.cos(angle)*r;
-                goldTarget[i3+1] = (h-0.5)*90;
+                goldTarget[i3+1] = (h-0.5)*100;
                 goldTarget[i3+2] = Math.sin(angle)*r;
 
                 // 爆炸偏移
@@ -124,11 +125,11 @@
                 goldOffset[i3+1] = (Math.random()-0.5)*2;
                 goldOffset[i3+2] = (Math.random()-0.5)*2;
 
-                // 颜色：金色为主，混入少量红/白
+                // 颜色：奢华金调色板
                 const colorType = Math.random();
                 const col = new THREE.Color();
-                if(colorType > 0.9) col.setHex(0xFFFFFF); // 白钻
-                else if(colorType > 0.8) col.setHex(0xFF0000); // 红宝石
+                if(colorType > 0.95) col.setHex(0xFFFFFF); // 钻石白闪
+                else if(colorType > 0.85) col.setHex(0xFFEDA0); // 浅金
                 else col.setHex(0xFFD700); // 纯金
                 
                 goldColor[i3] = col.r; goldColor[i3+1] = col.g; goldColor[i3+2] = col.b;
@@ -145,117 +146,60 @@
                     uTex: { value: sparkTexture },
                     uIsPhoto: { value: 0 }
                 },
+                // (Vertex Shader 保持不变，负责形态切换)
                 vertexShader: `
                     uniform float uTime;
-                    uniform float uFactor; // 0=树, 1=炸
+                    uniform float uFactor; 
                     uniform float uIsPhoto;
                     attribute vec3 aTarget;
                     attribute vec3 aOffset;
                     attribute vec3 color;
                     varying vec3 vColor;
-                    varying float vAlpha;
                     void main() {
                         vColor = color;
-                        // 树形态
                         vec3 posTree = aTarget;
-                        // 加上旋转
-                        float angle = uTime * 0.2;
+                        float angle = uTime * 0.15 + aTarget.y * 0.01;
                         float ca = cos(angle); float sa = sin(angle);
                         posTree.x = aTarget.x * ca - aTarget.z * sa;
                         posTree.z = aTarget.x * sa + aTarget.z * ca;
 
-                        // 爆炸形态
-                        vec3 posExp = aTarget + normalize(aOffset) * (80.0 + sin(uTime*3.0+aOffset.x)*10.0);
+                        vec3 posExp = aTarget + normalize(aOffset) * (100.0 + sin(uTime*2.5+aOffset.x)*15.0);
                         
-                        // 最终混合 (照片模式时强制散开)
-                        float finalFactor = mix(uFactor, 1.0, uIsPhoto * 0.9);
+                        float finalFactor = mix(uFactor, 1.0, uIsPhoto * 0.95);
                         vec3 finalPos = mix(posTree, posExp, finalFactor);
                         
                         vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
                         gl_Position = projectionMatrix * mvPosition;
-                        gl_PointSize = (4.0 * (1.0+finalFactor)) * (300.0 / -mvPosition.z);
-                        vAlpha = 1.0;
+                        gl_PointSize = (3.5 * (1.0+finalFactor*0.5)) * (300.0 / -mvPosition.z);
                     }
                 `,
                 fragmentShader: `
                     uniform sampler2D uTex;
                     varying vec3 vColor;
-                    varying float vAlpha;
                     void main() {
                         vec4 tex = texture2D(uTex, gl_PointCoord);
                         if(tex.a < 0.1) discard;
-                        gl_FragColor = vec4(vColor, tex.a * vAlpha);
+                        // 增强亮度，制造辉光感
+                        gl_FragColor = vec4(vColor * 1.5, tex.a);
                     }
                 `,
                 transparent: true,
                 depthWrite: false,
-                blending: THREE.AdditiveBlending // 关键：发光叠加
+                blending: THREE.AdditiveBlending
             });
             goldParticles = new THREE.Points(goldGeo, goldMat);
             scene.add(goldParticles);
 
-            // --- 系统2: 氛围漂浮物 (礼物、信封) ---
-            // 为了简化，这里也用 Points，但设置更大的 Size 和不同的颜色代表不同物体
-            const itemGeo = new THREE.BufferGeometry();
-            const itemPos = new Float32Array(ITEM_COUNT * 3);
-            const itemOffset = new Float32Array(ITEM_COUNT * 3);
-            for(let i=0; i<ITEM_COUNT; i++) {
-                itemPos[i*3]=0; itemPos[i*3+1]=0; itemPos[i*3+2]=0;
-                // 随机分布在树周围
-                const r = 20 + Math.random()*40;
-                const theta = Math.random()*Math.PI*2;
-                const y = (Math.random()-0.5)*100;
-                itemOffset[i*3] = Math.cos(theta)*r;
-                itemOffset[i*3+1] = y;
-                itemOffset[i*3+2] = Math.sin(theta)*r;
-            }
-            itemGeo.setAttribute('position', new THREE.BufferAttribute(itemPos, 3));
-            itemGeo.setAttribute('aBasePos', new THREE.BufferAttribute(itemOffset, 3));
-
-            const itemMat = new THREE.ShaderMaterial({
-                uniforms: { uTime: { value: 0 }, uFactor: { value: 0 }, uIsPhoto: { value: 0 } },
-                vertexShader: `
-                    uniform float uTime;
-                    uniform float uFactor;
-                    uniform float uIsPhoto;
-                    attribute vec3 aBasePos;
-                    void main() {
-                        // 围绕中心旋转漂浮
-                        float angle = uTime * 0.1 + aBasePos.y * 0.05;
-                        vec3 pos;
-                        pos.x = aBasePos.x * cos(angle) - aBasePos.z * sin(angle);
-                        pos.z = aBasePos.x * sin(angle) + aBasePos.z * cos(angle);
-                        pos.y = aBasePos.y + sin(uTime + aBasePos.x)*5.0;
-
-                        // 握拳时吸附到树里，张开时飞出去
-                        float finalFactor = mix(uFactor, 1.0, uIsPhoto);
-                        vec3 finalPos = pos * (0.5 + finalFactor * 1.5);
-
-                        vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
-                        gl_Position = projectionMatrix * mvPosition;
-                        gl_PointSize = 15.0 * (300.0 / -mvPosition.z);
-                    }
-                `,
-                fragmentShader: `
-                    void main() {
-                        // 简单的方形代表礼物/信封 (偷懒做法，远看像闪光的纸片)
-                        vec2 coord = gl_PointCoord - vec2(0.5);
-                        if(abs(coord.x) > 0.4 || abs(coord.y) > 0.4) discard;
-                        gl_FragColor = vec4(1.0, 0.2, 0.2, 0.8); // 红色礼物
-                    }
-                `,
-                transparent: true
-            });
-            itemParticles = new THREE.Points(itemGeo, itemMat);
-            scene.add(itemParticles);
-
-            // --- 照片展示平面 ---
-            const pLoader = new THREE.TextureLoader();
-            pLoader.crossOrigin = "Anonymous";
+            // --- 照片展示平面 (点击后显示的大图) ---
             photoMesh = new THREE.Mesh(
                 new THREE.PlaneGeometry(1,1),
                 new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide })
             );
+            // 给大图加一个金色边框光晕
+            const outlineMat = new THREE.MeshBasicMaterial({ color: 0xFFD700, side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.5 });
+            const outlineMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 1.05), outlineMat);
+            outlineMesh.position.z = -0.1;
+            photoMesh.add(outlineMesh);
             scene.add(photoMesh);
 
             window.addEventListener('resize', onResize);
@@ -267,39 +211,150 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // ================= 交互逻辑 =================
-        // 1. 加载画廊 (动态读取后端 API)
+        // ================= 交互逻辑与照片加载 =================
+        // 1. 加载画廊 并 创建照片粒子
         async function loadGallery() {
             const container = document.getElementById('gallery-container');
             const status = document.getElementById('loading-text');
+            const textureLoader = new THREE.TextureLoader();
+            textureLoader.crossOrigin = "Anonymous";
+
             try {
-                // 核心：请求 Node.js 后端，后端会返回 static 域名的 URL
                 const res = await fetch('/api/images');
                 const images = await res.json();
                 
                 container.innerHTML = '';
                 if(images.length === 0) { status.innerText = "Bucket为空"; return; }
 
-                images.forEach((imgData, idx) => {
-                    const el = document.createElement('img');
-                    // 加上时间戳防缓存
-                    el.src = imgData.url + "?t=" + Date.now();
-                    el.className = 'gallery-item';
-                    el.onclick = () => {
-                        document.querySelectorAll('.gallery-item').forEach(e=>e.classList.remove('selected'));
-                        el.classList.add('selected');
-                        showPhoto(imgData.url);
-                    };
-                    if(idx===0) el.click();
-                    container.appendChild(el);
+                // 用于存储所有加载好的纹理
+                const loadedTextures = [];
+
+                // 并行加载所有图片纹理，并在底部UI显示
+                const loadPromises = images.map((imgData, idx) => {
+                    return new Promise((resolve) => {
+                        const timestampedUrl = imgData.url + "?t=" + Date.now();
+                        
+                        // A. 创建 UI 缩略图
+                        const el = document.createElement('img');
+                        el.src = timestampedUrl;
+                        el.className = 'gallery-item';
+                        el.onclick = () => {
+                            document.querySelectorAll('.gallery-item').forEach(e=>e.classList.remove('selected'));
+                            el.classList.add('selected');
+                            showPhoto(imgData.url);
+                        };
+                        if(idx===0) el.click();
+                        container.appendChild(el);
+
+                        // B. 加载 Three.js 纹理
+                        textureLoader.load(timestampedUrl, (tex) => {
+                            // 设置纹理参数以适应粒子
+                            tex.minFilter = THREE.LinearMipMapLinearFilter;
+                            tex.magFilter = THREE.LinearFilter;
+                            loadedTextures.push(tex);
+                            resolve();
+                        });
+                    });
                 });
+
+                // 等待所有纹理加载完毕
+                await Promise.all(loadPromises);
+                status.remove(); // 移除加载提示
+
+                // C. 核心：为每张照片创建漂浮粒子系统
+                createPhotoParticleSystems(loadedTextures);
+
             } catch(e) {
                 console.error(e);
                 status.innerText = "连接后端失败: /api/images";
             }
         }
 
-        // 2. 显示照片
+        // 创建照片粒子系统的函数
+        function createPhotoParticleSystems(textures) {
+            // 照片粒子的 Shader (复用逻辑，但采样纹理)
+            const photoMatTemplate = new THREE.ShaderMaterial({
+                uniforms: { uTime: { value: 0 }, uFactor: { value: 0 }, uIsPhoto: { value: 0 }, uTex: { value: null } },
+                vertexShader: `
+                    uniform float uTime;
+                    uniform float uFactor;
+                    uniform float uIsPhoto;
+                    attribute vec3 aBasePos;
+                    attribute float aSpeed;
+                    void main() {
+                        // 围绕中心缓慢旋转漂浮
+                        float angle = uTime * aSpeed * 0.05 + aBasePos.y * 0.02;
+                        vec3 pos;
+                        pos.x = aBasePos.x * cos(angle) - aBasePos.z * sin(angle);
+                        pos.z = aBasePos.x * sin(angle) + aBasePos.z * cos(angle);
+                        // 上下浮动
+                        pos.y = aBasePos.y + sin(uTime * aSpeed + aBasePos.x)*8.0;
+
+                        // 握拳时吸附，张开时飞远
+                        float finalFactor = mix(uFactor, 1.0, uIsPhoto);
+                        vec3 finalPos = pos * (0.6 + finalFactor * 2.0);
+
+                        vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
+                        gl_Position = projectionMatrix * mvPosition;
+                        // 照片粒子要大一些
+                        gl_PointSize = 25.0 * (300.0 / -mvPosition.z);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D uTex;
+                    void main() {
+                        // 采样照片纹理
+                        vec4 texColor = texture2D(uTex, gl_PointCoord);
+                        // 简单的圆形裁切 (如果喜欢方形可以去掉这两行)
+                        vec2 coord = gl_PointCoord - vec2(0.5);
+                        if(length(coord) > 0.5) discard;
+                        
+                        // 加一点金色边框光晕
+                        float dist = length(coord);
+                        float rim = smoothstep(0.45, 0.5, dist);
+                        vec3 finalColor = mix(texColor.rgb, vec3(1.0, 0.84, 0.0), rim * 0.8);
+
+                        gl_FragColor = vec4(finalColor, texColor.a);
+                    }
+                `,
+                transparent: true,
+                depthWrite: false
+                // 不用 AdditiveBlending，因为要看清照片内容
+            });
+
+            // 为每一张纹理创建一个粒子系统
+            textures.forEach(tex => {
+                const geo = new THREE.BufferGeometry();
+                const pos = new Float32Array(PARTICLES_PER_PHOTO * 3);
+                const basePos = new Float32Array(PARTICLES_PER_PHOTO * 3);
+                const speed = new Float32Array(PARTICLES_PER_PHOTO);
+
+                for(let i=0; i<PARTICLES_PER_PHOTO; i++) {
+                    pos[i*3]=0; pos[i*3+1]=0; pos[i*3+2]=0;
+                    // 随机分布在树周围较远的地方
+                    const r = 30 + Math.random()*60;
+                    const theta = Math.random()*Math.PI*2;
+                    const y = (Math.random()-0.5)*120;
+                    basePos[i*3] = Math.cos(theta)*r;
+                    basePos[i*3+1] = y;
+                    basePos[i*3+2] = Math.sin(theta)*r;
+                    speed[i] = 0.5 + Math.random();
+                }
+                geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                geo.setAttribute('aBasePos', new THREE.BufferAttribute(basePos, 3));
+                geo.setAttribute('aSpeed', new THREE.BufferAttribute(speed, 1));
+
+                // 克隆材质模板并绑定当前纹理
+                const mat = photoMatTemplate.clone();
+                mat.uniforms.uTex.value = tex;
+
+                const points = new THREE.Points(geo, mat);
+                scene.add(points);
+                photoParticleGroups.push(points);
+            });
+        }
+
+        // 2. 显示大图
         function showPhoto(url) {
             isPhotoMode = true;
             const loader = new THREE.TextureLoader();
@@ -307,9 +362,13 @@
             loader.load(url + "?t=" + Date.now(), (tex) => {
                 const aspect = tex.image.width / tex.image.height;
                 photoMesh.geometry.dispose();
-                photoMesh.geometry = new THREE.PlaneGeometry(40*aspect, 40);
+                const h = 45; // 大图高度
+                photoMesh.geometry = new THREE.PlaneGeometry(h*aspect, h);
                 photoMesh.material.map = tex;
                 photoMesh.material.needsUpdate = true;
+                // 更新边框尺寸
+                photoMesh.children[0].geometry.dispose();
+                photoMesh.children[0].geometry = new THREE.PlaneGeometry(h*aspect+2, h+2);
             });
         }
 
@@ -322,24 +381,17 @@
                 if(results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     isMouseMode = false;
                     const lm = results.multiHandLandmarks[0];
-                    // 计算张开程度
-                    const d = Math.hypot(lm[8].x - lm[0].x, lm[8].y - lm[0].y); // 食指到手腕
-                    // 映射: 0.2(拳) -> 0.5(张)
-                    let target = (d - 0.2) * 3.3; 
+                    const d = Math.hypot(lm[8].x - lm[0].x, lm[8].y - lm[0].y); 
+                    let target = (d - 0.2) * 3.0; 
                     handOpenFactor += (Math.max(0, Math.min(1, target)) - handOpenFactor) * 0.1;
                     
                     const status = document.getElementById('status-text');
-                    if(handOpenFactor < 0.3) status.innerText = "状态: 聚合成树 (握拳)";
-                    else status.innerText = "状态: 粒子爆发 (张手)";
+                    if(handOpenFactor < 0.35) status.innerText = "状态: 聚合回忆 (握拳)";
+                    else status.innerText = "状态: 金色爆发 (张手)";
                     
-                    // 捏合检测
                     const pinch = Math.hypot(lm[4].x-lm[8].x, lm[4].y-lm[8].y);
-                    if(pinch < 0.05) {
-                        status.innerText = "状态: 抓取照片";
-                        // 这里可以加拖动逻辑，暂时省略保持流畅
-                    }
+                    if(pinch < 0.05) status.innerText = "状态: 检视照片 (捏合)";
                 } else if(!isMouseMode) {
-                    // 没手时自动聚拢
                     handOpenFactor += (0 - handOpenFactor) * 0.05;
                     document.getElementById('status-text').innerText = "等待手势...";
                 }
@@ -352,35 +404,33 @@
             cam.start();
         }
 
-        // 4. 鼠标兼容
-        document.addEventListener('mousemove', (e) => {
-            // 如果没检测到摄像头，允许鼠标控制演示
-            // 上下控制聚散，左右控制旋转
-            // handOpenFactor = 1.0 - e.clientY/window.innerHeight;
-        });
-
-        // 5. 动画循环
+        // 4. 动画循环
         function animate() {
             requestAnimationFrame(animate);
             const time = Date.now() * 0.001;
 
+            // 更新金粉粒子
             if(goldParticles) {
                 goldParticles.material.uniforms.uTime.value = time;
                 goldParticles.material.uniforms.uFactor.value = handOpenFactor;
-                // 平滑切换照片模式
                 goldParticles.material.uniforms.uIsPhoto.value += ((isPhotoMode?1:0) - goldParticles.material.uniforms.uIsPhoto.value)*0.1;
-                
-                itemParticles.material.uniforms.uTime.value = time;
-                itemParticles.material.uniforms.uFactor.value = handOpenFactor;
-                itemParticles.material.uniforms.uIsPhoto.value = goldParticles.material.uniforms.uIsPhoto.value;
             }
 
+            // 更新所有照片粒子系统
+            photoParticleGroups.forEach(sys => {
+                sys.material.uniforms.uTime.value = time;
+                sys.material.uniforms.uFactor.value = handOpenFactor;
+                sys.material.uniforms.uIsPhoto.value = goldParticles.material.uniforms.uIsPhoto.value;
+            });
+
+            // 更新大图展示
             if(photoMesh) {
                 const targetOp = isPhotoMode ? 1.0 : 0.0;
                 photoMesh.material.opacity += (targetOp - photoMesh.material.opacity) * 0.1;
+                photoMesh.children[0].material.opacity = photoMesh.material.opacity * 0.6; // 边框透明度
                 if(isPhotoMode) {
-                    photoMesh.position.y = Math.sin(time)*1.0; // 悬浮
-                    photoMesh.rotation.y = Math.sin(time*0.5)*0.1;
+                    photoMesh.position.y = Math.sin(time*1.5)*1.5; // 悬浮
+                    photoMesh.rotation.y = Math.sin(time*0.8)*0.08; // 微小摆动
                 }
             }
 
