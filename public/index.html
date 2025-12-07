@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>梦幻粒子圣诞树 AR</title>
+    <title>钢铁侠粒子圣诞树</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -24,225 +24,268 @@
         }
         .gallery-item:hover { transform: scale(1.05); }
         .gallery-item.selected { border-color: #ffd700; }
-        #loading-text { color: white; width: 100%; text-align: center; }
-        #instruction {
+        #status-bar {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%) scaleX(-1);
-            color: gold; background: rgba(0,0,0,0.5); padding: 10px 20px;
-            border-radius: 20px; pointer-events: none; z-index: 50; text-shadow: 0 0 10px gold;
+            color: #00ffff; background: rgba(0,0,0,0.7); padding: 10px 25px;
+            border-radius: 20px; pointer-events: none; z-index: 50; 
+            font-weight: bold; letter-spacing: 1px; border: 1px solid #00ffff;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
         }
     </style>
 </head>
 <body>
 
-    <div id="instruction">✨ 单手捏合拖动 | 👐双手捏合缩放 ✨</div>
+    <div id="status-bar">等待手势指令...</div>
 
     <video id="input_video"></video>
     <canvas id="output_canvas"></canvas>
 
     <div id="gallery-container">
-        <div id="loading-text">正在加载云端粒子素材...</div>
+        <div style="color:white;width:100%;text-align:center;">正在连接云端...</div>
     </div>
 
 <script>
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
-    const canvasCtx = canvasElement.getContext('2d');
-    
-    // --- 1. 状态管理 ---
-    let imgObj = new Image(); imgObj.src = ""; 
-    let imgState = { x: 0.5, y: 0.5, scale: 0.3, aspectRatio: 1 };
-    function getDistance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
+    const ctx = canvasElement.getContext('2d');
+    const statusEl = document.getElementById('status-bar');
 
-    // ==========================================
-    // --- 🌟 核心升级：粒子树系统 🌟 ---
-    // ==========================================
-    class Particle {
-        constructor() {
-            this.reset();
-            this.y = Math.random(); // 初始高度随机
-        }
-        reset() {
-            this.y = 0; // 从底部开始
-            this.angle = Math.random() * Math.PI * 2; // 随机角度
-            // 颜色库：大量金色，少量红绿点缀
-            const colors = ['#FFD700', '#FFD700', '#FFD700', '#FF4500', '#ADFF2F', '#ffffff'];
-            this.color = colors[Math.floor(Math.random() * colors.length)];
-            this.speed = Math.random() * 0.002 + 0.001; // 上升速度
-            this.radiusMod = Math.random() * 0.5 + 0.5; // 大小随机微调
-            this.spinSpeed = Math.random() * 0.02 - 0.01; // 旋转速度
-        }
-        update() {
-            this.y += this.speed;
-            this.angle += this.spinSpeed;
-            if (this.y > 1) this.reset(); // 超过顶部重置到底部，形成循环
-        }
+    // --- 全局状态 ---
+    let MODE = 'TREE'; // 'TREE' (树) | 'EXPLODE' (粒子云)
+    let INTERACTION = 'NONE'; // 'NONE' | 'PINCHING'
+    
+    // 图片状态
+    let imgObj = new Image(); imgObj.src = "";
+    let imgState = { x: 0.5, y: 0.5, scale: 0, opacity: 0 }; // 初始 opacity 0 (隐藏)
+
+    // --- ✋ 手势检测逻辑 ---
+    function detectGesture(landmarks) {
+        // 关键点索引: 0(手腕), 8(食指尖), 12(中指尖), 16(无名指尖), 20(小指尖)
+        // 简单算法：如果指尖都很靠近手腕(0点)，就是握拳
+        
+        const wrist = landmarks[0];
+        const tips = [8, 12, 16, 20];
+        let foldedFingers = 0;
+
+        tips.forEach(idx => {
+            const tip = landmarks[idx];
+            // 计算指尖到手腕的距离
+            const dist = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
+            // 归一化距离判断 (根据手掌大小调整阈值，通常<0.3算折叠)
+            if (dist < 0.35) foldedFingers++; 
+        });
+
+        // 拇指(4)和食指(8)的距离用于判断捏合
+        const pinchDist = Math.hypot(landmarks[4].x - landmarks[8].x, landmarks[4].y - landmarks[8].y);
+        const isPinch = pinchDist < 0.05;
+
+        // 状态判定优先级
+        if (isPinch) return 'PINCH';
+        if (foldedFingers >= 3) return 'FIST'; // 握拳
+        if (foldedFingers <= 1) return 'OPEN'; // 张开
+        return 'UNKNOWN';
     }
 
-    class ParticleTree {
+    // --- ✨ 粒子系统 ---
+    class Particle {
         constructor() {
-            this.particles = [];
-            for(let i = 0; i < 800; i++) { // 800个粒子
-                this.particles.push(new Particle());
-            }
-            this.starAngle = 0;
-        }
-        draw(ctx, centerX, centerY, baseScale) {
-            const treeHeight = window.innerHeight * 0.6 * baseScale;
-            const maxRadius = treeHeight * 0.4;
-
-            ctx.save();
-            // 关键：叠加模式变亮，制造发光感
-            ctx.globalCompositeOperation = 'lighter';
+            this.x = Math.random() * canvasElement.width;
+            this.y = Math.random() * canvasElement.height;
+            this.tx = this.x; // 目标位置 X
+            this.ty = this.y; // 目标位置 Y
             
-            this.particles.forEach(p => {
-                p.update();
-                // 核心算法：随着高度(y)增加，半径(r)变小，形成圆锥体
-                const currentRadius = maxRadius * (1 - p.y);
-                // 计算粒子的绝对坐标
-                const px = centerX + Math.cos(p.angle) * currentRadius;
-                const py = centerY + (p.y - 0.5) * -treeHeight; // y轴反转，0.5为中心点
-
-                // 绘制发光粒子
-                const size = (3 * p.radiusMod) * baseScale;
-                ctx.beginPath();
-                ctx.arc(px, py, size, 0, Math.PI * 2);
-                ctx.fillStyle = p.color;
-                // 强力发光效果
-                ctx.shadowColor = p.color;
-                ctx.shadowBlur = 15 * baseScale;
-                ctx.fill();
-            });
-
-            // 绘制顶部大星星
-            this.starAngle += 0.02;
-            ctx.translate(centerX, centerY - treeHeight * 0.55);
-            ctx.rotate(this.starAngle);
-            this.drawStar(ctx, 0, 0, 5, 15 * baseScale, 7 * baseScale);
-            ctx.restore();
+            this.color = `hsl(${Math.random()*40 + 40}, 100%, 70%)`; // 金色/黄色系
+            this.baseSize = Math.random() * 3 + 1;
+            
+            // 树形态的参数
+            this.treeY = Math.random(); // 0-1 (树的高度位置)
+            this.treeAngle = Math.random() * Math.PI * 2;
         }
 
-        drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius) {
-            let rot = Math.PI / 2 * 3;
-            let x = cx; let y = cy;
-            let step = Math.PI / spikes;
-
-            ctx.beginPath();
-            ctx.moveTo(cx, cy - outerRadius);
-            for (let i = 0; i < spikes; i++) {
-                x = cx + Math.cos(rot) * outerRadius; y = cy + Math.sin(rot) * outerRadius;
-                ctx.lineTo(x, y); rot += step;
-                x = cx + Math.cos(rot) * innerRadius; y = cy + Math.sin(rot) * innerRadius;
-                ctx.lineTo(x, y); rot += step;
+        update(centerX, centerY, treeHeight) {
+            // 1. 计算目标位置
+            if (MODE === 'TREE') {
+                // 树形态：圆锥螺旋
+                const maxRadius = treeHeight * 0.4 * (1 - this.treeY);
+                this.tx = centerX + Math.cos(this.treeAngle) * maxRadius;
+                this.ty = centerY + (this.treeY - 0.5) * -treeHeight;
+                
+                // 让粒子在树上旋转
+                this.treeAngle += 0.02;
+                this.color = '#FFD700'; // 树是金色的
+            } else if (MODE === 'EXPLODE') {
+                // 爆炸形态：向四周扩散 + 随机漂浮
+                // 利用 treeAngle 做些随机运动
+                this.treeAngle += 0.005;
+                const radius = treeHeight * 1.5; // 扩散半径更大
+                // 简单的噪点漂浮算法
+                this.tx = centerX + Math.cos(this.treeAngle * 3 + this.treeY * 10) * radius * (this.treeY + 0.2);
+                this.ty = centerY + Math.sin(this.treeAngle * 2 + this.treeY * 10) * radius * (this.treeY + 0.2);
+                
+                // 爆炸时变彩色
+                this.color = `hsl(${this.treeY * 360}, 80%, 60%)`;
             }
-            ctx.lineTo(cx, cy - outerRadius);
-            ctx.closePath();
-            ctx.fillStyle = "#FFFACD";
-            ctx.shadowColor = "#FFD700";
-            ctx.shadowBlur = 30;
+
+            // 2. 缓动动画 (Ease out) - 让粒子飞过去
+            this.x += (this.tx - this.x) * 0.08;
+            this.y += (this.ty - this.y) * 0.08;
+        }
+
+        draw(ctx) {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.baseSize, 0, Math.PI * 2);
+            ctx.fillStyle = this.color;
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 10;
             ctx.fill();
         }
     }
-    // 初始化粒子树系统
-    const myParticleTree = new ParticleTree();
-    // ==========================================
 
-    // --- 4. MediaPipe 每一帧的回调 ---
+    // 初始化粒子池
+    const particles = [];
+    for(let i=0; i<600; i++) particles.push(new Particle());
+
+    // --- 🎥 主渲染循环 ---
     function onResults(results) {
         canvasElement.width = window.innerWidth;
         canvasElement.height = window.innerHeight;
         
-        canvasCtx.save();
-        // A. 绘制背景 (稍微变暗一点，突出粒子)
-        canvasCtx.filter = 'brightness(0.7)';
-        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-        canvasCtx.filter = 'none';
-        
-        // B. 🌟 绘制新的粒子树 🌟
-        // 使用 imgState 的位置和缩放，让粒子树跟随手势
-        myParticleTree.draw(
-            canvasCtx, 
-            imgState.x * canvasElement.width, 
-            imgState.y * canvasElement.height, 
-            imgState.scale * 3 // 放大一点基础比例
-        );
+        // 1. 绘制背景
+        ctx.save();
+        ctx.filter = 'brightness(0.5) contrast(1.2)'; // 压暗背景让粒子更亮
+        ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+        ctx.filter = 'none';
+        ctx.globalCompositeOperation = 'lighter'; // 叠加发光模式
 
-        // C. 手势逻辑 (保持不变)
+        let handCenter = { x: canvasElement.width/2, y: canvasElement.height/2 };
+        let gesture = 'UNKNOWN';
+
+        // 2. 处理手势 & 状态机
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-            let pinchHands = [];
-            for (const landmarks of results.multiHandLandmarks) {
-                const thumb = landmarks[4]; const index = landmarks[8];
-                const distance = getDistance(thumb, index);
-                if (distance < 0.05) {
-                    const centerPoint = { x: (thumb.x + index.x)/2, y: (thumb.y + index.y)/2 };
-                    // 绘制捏合指示器
-                    canvasCtx.beginPath();
-                    canvasCtx.arc(centerPoint.x * canvasElement.width, centerPoint.y * canvasElement.height, 15, 0, 2 * Math.PI);
-                    canvasCtx.strokeStyle = "gold"; canvasCtx.lineWidth = 3; canvasCtx.stroke();
-                    pinchHands.push(centerPoint);
-                }
+            const landmarks = results.multiHandLandmarks[0];
+            gesture = detectGesture(landmarks);
+            
+            // 更新手心坐标 (用中指根部 9 和 手腕 0 的中间点)
+            handCenter.x = (landmarks[9].x + landmarks[0].x) / 2 * canvasElement.width;
+            handCenter.y = (landmarks[9].y + landmarks[0].y) / 2 * canvasElement.height;
+
+            // --- 状态切换逻辑 ---
+            if (gesture === 'FIST') {
+                MODE = 'TREE';
+                statusEl.innerText = "✊ 聚合：圣诞树模式";
+                statusEl.style.color = "#FFD700";
+                // 握拳时，照片隐藏
+                imgState.opacity *= 0.8; 
+            } else if (gesture === 'OPEN') {
+                MODE = 'EXPLODE';
+                statusEl.innerText = "🖐 扩散：粒子云模式";
+                statusEl.style.color = "#00ffff";
+                // 张开手时，照片也隐藏(或者变小)，等待抓取
+                imgState.opacity *= 0.8;
+            } else if (gesture === 'PINCH') {
+                // 捏合：不改变粒子模式，只改变照片状态
+                statusEl.innerText = "👌 抓取：照片放大";
+                statusEl.style.color = "#ff00ff";
+                
+                // 捏合逻辑：移动并显示照片
+                const thumb = landmarks[4];
+                const index = landmarks[8];
+                const pinchX = (thumb.x + index.x) / 2 * canvasElement.width;
+                const pinchY = (thumb.y + index.y) / 2 * canvasElement.height;
+                
+                // 照片跟随捏合点
+                imgState.x += (pinchX - imgState.x) * 0.1; // 缓动跟随
+                imgState.y += (pinchY - imgState.y) * 0.1;
+                imgState.opacity += (1 - imgState.opacity) * 0.1; // 渐显
+                imgState.scale += (1 - imgState.scale) * 0.1;     // 变大到 1.0
             }
-            if (pinchHands.length === 1) {
-                imgState.x = pinchHands[0].x; imgState.y = pinchHands[0].y;
-            } else if (pinchHands.length === 2) {
-                const dist = getDistance(pinchHands[0], pinchHands[1]);
-                imgState.scale = Math.max(0.1, dist * 2.5); 
-                imgState.x = (pinchHands[0].x + pinchHands[1].x) / 2;
-                imgState.y = (pinchHands[0].y + pinchHands[1].y) / 2;
-            }
+        } else {
+            // 没有手的时候，默认显示树
+            MODE = 'TREE';
+            statusEl.innerText = "等待手势...";
+            statusEl.style.color = "#fff";
+            imgState.opacity *= 0.9; // 没人就隐藏照片
         }
 
-        // D. 绘制选中的图片 (挂在树上的照片)
-        if(imgObj.src && imgObj.complete && imgObj.naturalWidth !== 0) {
-            imgState.aspectRatio = imgObj.width / imgObj.height;
-            const drawW = canvasElement.width * imgState.scale * 0.8; // 图片稍微比树小一点
-            const drawH = drawW / imgState.aspectRatio;
-            const drawX = imgState.x * canvasElement.width - drawW / 2;
-            const drawY = imgState.y * canvasElement.height - drawH / 2;
+        // 3. 更新并绘制粒子
+        // 粒子中心跟随手心 (如果没有手，就居中)
+        particles.forEach(p => {
+            p.update(handCenter.x, handCenter.y, canvasElement.height * 0.5);
+            p.draw(ctx);
+        });
 
-            // 给照片也加个发光金边框
-            canvasCtx.save();
-            canvasCtx.shadowColor = "gold";
-            canvasCtx.shadowBlur = 15;
-            canvasCtx.strokeStyle = "#FFD700";
-            canvasCtx.lineWidth = 8;
-            canvasCtx.strokeRect(drawX, drawY, drawW, drawH);
-            canvasCtx.restore();
+        // 4. 绘制照片 (全息投影风格)
+        if (imgObj.src && imgObj.complete && imgState.opacity > 0.01) {
+            ctx.globalCompositeOperation = 'source-over'; // 正常绘制照片
+            ctx.save();
+            ctx.globalAlpha = imgState.opacity;
+            
+            const aspectRatio = imgObj.naturalWidth / imgObj.naturalHeight || 1;
+            // 基础宽度 300px * scale
+            const drawW = 300 * Math.max(0.5, imgState.scale); 
+            const drawH = drawW / aspectRatio;
+            const drawX = imgState.x - drawW/2;
+            const drawY = imgState.y - drawH/2;
 
-            canvasCtx.drawImage(imgObj, drawX, drawY, drawW, drawH);
+            // 绘制照片
+            ctx.drawImage(imgObj, drawX, drawY, drawW, drawH);
+            
+            // 科技感边框
+            ctx.strokeStyle = "cyan";
+            ctx.lineWidth = 3;
+            ctx.shadowColor = "cyan";
+            ctx.shadowBlur = 20;
+            ctx.strokeRect(drawX, drawY, drawW, drawH);
+            
+            // 边角装饰
+            ctx.fillStyle = "cyan";
+            const corner = 10;
+            ctx.fillRect(drawX - 2, drawY - 2, corner, corner);
+            ctx.fillRect(drawX + drawW - corner + 2, drawY - 2, corner, corner);
+            ctx.fillRect(drawX - 2, drawY + drawH - corner + 2, corner, corner);
+            ctx.fillRect(drawX + drawW - corner + 2, drawY + drawH - corner + 2, corner, corner);
+
+            ctx.restore();
         }
-        
-        canvasCtx.restore();
+
+        ctx.restore();
     }
 
-    // --- 5. 初始化及后续逻辑 (保持不变) ---
+    // --- MediaPipe 初始化 ---
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     hands.onResults(onResults);
     const camera = new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 1280, height: 720 });
     camera.start();
 
+    // --- 加载素材 ---
     async function loadGallery() {
-        const galleryContainer = document.getElementById('gallery-container');
+        const container = document.getElementById('gallery-container');
         try {
             const res = await fetch('/api/images');
             const images = await res.json();
-            galleryContainer.innerHTML = ''; 
-            if (images.length === 0) { galleryContainer.innerHTML = '<div id="loading-text">没有图片</div>'; return; }
-            images.forEach((imgData, index) => {
-                const imgEl = document.createElement('img');
-                imgEl.src = imgData.url; imgEl.className = 'gallery-item';
-                imgEl.onclick = () => {
-                    document.querySelectorAll('.gallery-item').forEach(e => e.classList.remove('selected'));
-                    imgEl.classList.add('selected');
+            container.innerHTML = '';
+            
+            if(images.length === 0) { container.innerHTML = '<div style="color:white;margin:auto">Bucket为空</div>'; return; }
+
+            images.forEach((data, idx) => {
+                const el = document.createElement('img');
+                el.src = data.url;
+                el.className = 'gallery-item';
+                el.onclick = () => {
+                    document.querySelectorAll('.gallery-item').forEach(e=>e.classList.remove('selected'));
+                    el.classList.add('selected');
+                    // 加上时间戳防缓存
                     imgObj.crossOrigin = "Anonymous";
-                    imgObj.src = imgData.url + "?t=" + new Date().getTime();
+                    imgObj.src = data.url + "?t=" + Date.now();
                 };
-                if (index === 0) imgEl.click();
-                galleryContainer.appendChild(imgEl);
+                if(idx===0) el.click();
+                container.appendChild(el);
             });
-        } catch (err) { console.error(err); galleryContainer.innerHTML = '<div id="loading-text">素材加载失败</div>'; }
+        } catch(e) { console.error(e); container.innerHTML = '<div style="color:red;margin:auto">加载失败</div>'; }
     }
     loadGallery();
+
 </script>
 </body>
 </html>
