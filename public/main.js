@@ -13,6 +13,9 @@ const CONFIG = {
     treeHeight: 90,
     explodeRadius: 150,
     camZ: 130,
+    // 【修正配置】
+    photoDistance: 15, // 照片居中时离相机的距离
+    photoBaseHeight: 12, // 照片的原始高度 (PlaneGeometry是9x12)
     colors: {
         gold: 0xFFD700,
         red: 0xC41E3A,    
@@ -39,7 +42,7 @@ const inputState = {
     x: 0.5, y: 0.5,
     isFist: false,
     isPinch: false,
-    zoomLevel: 3.5,
+    zoomLevel: 1.0, // 【初始缩放级别调整为1.0】
     lastPinchTime: 0
 };
 
@@ -92,11 +95,10 @@ async function fetchBucketPhotos() {
     }
     
     initThree();
-    // 延迟启动 MediaPipe
     setTimeout(initMediaPipeSafe, 100);
 }
 
-// ================= 2. 交互逻辑 (修正) =================
+// ================= 2. 交互逻辑 =================
 
 function getIntersectedPhoto(clientX, clientY) {
     const mv = new THREE.Vector2();
@@ -119,13 +121,13 @@ function onGlobalMouseMove(event) {
     inputState.x = event.clientX / window.innerWidth;
     inputState.y = event.clientY / window.innerHeight;
     
-    // 如果没有照片被选中，显示鼠标指针
     if (activePhotoIdx === -1) { 
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
         document.body.style.cursor = hit ? 'pointer' : 'default';
-        // 悬停缩放反馈
         photos.forEach(p => {
-            p.userData.hoverScale = (p === hit) ? 1.2 : 1.0;
+            // 【鼠标悬停微调】
+            const targetHoverScale = (p === hit) ? 1.2 : 1.0;
+            p.userData.hoverScale += (targetHoverScale - p.userData.hoverScale) * 0.1;
         });
     } else {
         document.body.style.cursor = 'default';
@@ -138,18 +140,15 @@ function onGlobalMouseDown(event) {
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
     if (targetPhoto) {
-        // [点击照片] 选中并居中
         activePhotoIdx = targetPhoto.userData.idx;
-        inputState.isFist = false; // 退出握拳状态
-        inputState.zoomLevel = 4.0;
+        inputState.isFist = false;
+        inputState.zoomLevel = 1.0; // 【重置缩放级别】
         updateStatusText("MEMORY LOCKED", "#00ffff");
     } else {
         if (activePhotoIdx !== -1) {
-            // [点击空白且有选中照片] 取消选中
             activePhotoIdx = -1; 
             updateStatusText("GALAXY MODE");
         } else {
-            // [点击空白且无选中照片] 触发聚合
             inputState.isFist = true;
             updateStatusText("FORMING TREE", "#FFD700");
         }
@@ -157,7 +156,6 @@ function onGlobalMouseDown(event) {
 }
 
 function onGlobalMouseUp(event) {
-    // 只有在没有照片被选中的情况下，松开鼠标才取消聚合
     if (activePhotoIdx === -1) {
         inputState.isFist = false;
         updateStatusText("GALAXY MODE");
@@ -167,7 +165,8 @@ function onGlobalMouseUp(event) {
 function onGlobalWheel(event) {
     if (activePhotoIdx !== -1) {
         inputState.zoomLevel += event.deltaY * -0.005;
-        inputState.zoomLevel = Math.max(1.5, Math.min(8.0, inputState.zoomLevel));
+        // 【缩小级别调整】允许在 0.5 到 2.5 之间缩放，以避免过小或过大
+        inputState.zoomLevel = Math.max(0.5, Math.min(2.5, inputState.zoomLevel)); 
     }
 }
 
@@ -180,7 +179,7 @@ function updateStatusText(text, color = "#fff") {
     }
 }
 
-// ================= 3. Three.js 场景构建 (无变化) =================
+// ================= 3. Three.js 场景构建 (略) =================
 function initThree() {
     const container = document.getElementById('canvas-container');
     scene = new THREE.Scene();
@@ -227,7 +226,7 @@ function initThree() {
 }
 
 function createChristmasObjects() {
-    // 材质定义
+    // ... (几何体和粒子创建逻辑保持不变，确保 photo.userData 包含 hoverScale: 1.0)
     const matLeaf = new THREE.MeshLambertMaterial({ color: CONFIG.colors.leafGreen });
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0 });
     const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
@@ -235,7 +234,6 @@ function createChristmasObjects() {
     const matWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
     const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 1.2 });
 
-    // 几何体
     const leafGeo = new THREE.TetrahedronGeometry(2.0); 
     const sphereGeo = new THREE.SphereGeometry(1.3, 16, 16);
     const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2);
@@ -247,6 +245,7 @@ function createChristmasObjects() {
     const stockFootGeo = new THREE.CylinderGeometry(0.8, 0.9, 1.5, 12);
 
     for(let i=0; i<CONFIG.particleCount; i++) {
+        // ... (省略粒子创建逻辑，保持不变)
         let mesh;
         const type = Math.random();
 
@@ -318,13 +317,12 @@ function createChristmasObjects() {
             mat.map = createTextTexture("LOAD FAILED");
         });
 
-        // 将照片和边框放在一个 Group 中，但只将 Mesh 作为碰撞体
         const photoMesh = new THREE.Mesh(photoGeo, mat);
         const border = new THREE.Mesh(borderGeo, borderMat);
-        border.position.z = -0.1; // 边框在后
+        border.position.z = -0.1;
 
         const group = new THREE.Group();
-        group.userData = {type: 'PHOTO', idx: i, hoverScale: 1.0}; // 添加 hoverScale
+        group.userData = {type: 'PHOTO', idx: i, hoverScale: 1.0};
         group.add(photoMesh);
         group.add(border);
 
@@ -340,7 +338,6 @@ function initParticle(mesh, type, idx) {
     const angle = h * Math.PI * 25 + idx * 0.1;
     
     let radiusMod = 1.0;
-    // 如果是树叶(LEAF)或照片(PHOTO)
     if (type === 'LEAF' || type === 'PHOTO') radiusMod = 0.85; 
 
     const r = ((1.05 - h) * 40) * radiusMod;
@@ -355,7 +352,6 @@ function initParticle(mesh, type, idx) {
         rad * Math.cos(phi)
     );
 
-    // 确保合并 userData，特别是 PHOTO type 已经定义了 type/idx/hoverScale
     mesh.userData = Object.assign(mesh.userData || {}, {
         type, idx, treePos, explodePos,
         rotSpeed: {x:Math.random()*0.02, y:Math.random()*0.02, z:Math.random()*0.02},
@@ -398,9 +394,8 @@ function createMerryChristmas() {
     });
 }
 
-// ================= 4. 动画循环 (核心状态机修正) =================
+// ================= 4. 动画循环 (核心缩放修正) =================
 function updateLogic() {
-    // 状态优先级：选中照片 > 握拳聚合 > 爆炸模式
     if (activePhotoIdx !== -1) {
         targetState = 'PHOTO';
         updateStatusText("MEMORY VIEW", "#00ffff");
@@ -414,12 +409,27 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
     
-    // 视角控制 (PHOTO 模式不旋转场景)
     if (targetState !== 'PHOTO') {
         const targetRotY = (inputState.x - 0.5) * 1.0;
         const targetRotX = (inputState.y - 0.5) * 0.5;
         scene.rotation.y += (targetRotY - scene.rotation.y) * 0.05;
         scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
+    }
+
+    // 静态变量：只在 PHOTO 模式下计算一次基础缩放
+    let basePhotoScale = 1.0;
+    if (targetState === 'PHOTO') {
+        // 【核心修正：基于 FOV 动态计算初始缩放】
+        // 1. 计算目标距离上的半高 (Half Height)
+        const distanceToTarget = CONFIG.camZ - CONFIG.photoDistance; 
+        const halfFovRad = THREE.MathUtils.degToRad(camera.fov / 2);
+        const viewHalfHeight = distanceToTarget * Math.tan(halfFovRad);
+        
+        // 2. 目标高度 (占据视口高度的 80%)
+        const targetHeight = viewHalfHeight * 2 * 0.8; 
+        
+        // 3. 计算基础缩放因子： (目标高度 / 照片原始高度)
+        basePhotoScale = targetHeight / CONFIG.photoBaseHeight; 
     }
 
     particles.forEach(mesh => {
@@ -429,11 +439,6 @@ function updateLogic() {
         
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
-
-        // 悬停动画 (仅在非PHOTO模式下且是照片时生效)
-        if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
-            tScale.multiplyScalar(data.hoverScale);
-        }
 
         if (targetState === 'TREE') {
             tPos.copy(data.treePos);
@@ -447,16 +452,23 @@ function updateLogic() {
         }
         else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                // 选中照片：飞到脸前
-                tPos.set(0, 0, CONFIG.camZ - 15); 
-                tScale.multiplyScalar(inputState.zoomLevel);
+                // 选中照片：应用基础缩放 * 用户动态缩放
+                tPos.set(0, 0, CONFIG.camZ - CONFIG.photoDistance); 
                 
-                mesh.lookAt(camera.position); // 照片正对相机
+                // 应用动态计算的缩放和用户控制的缩放
+                const finalScale = basePhotoScale * inputState.zoomLevel;
+                tScale.multiplyScalar(finalScale); 
+                
+                mesh.lookAt(camera.position); 
                 mesh.rotation.set(0,0,0);
             } else {
-                // 其他物体：退散
                 tPos.copy(data.explodePos).multiplyScalar(2.0);
             }
+        }
+        
+        // 鼠标悬停缩放（仅在 EXPLODE 和 TREE 模式下）
+        if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
+             tScale.multiplyScalar(data.hoverScale);
         }
 
         mesh.position.lerp(tPos, 0.08);
@@ -477,11 +489,10 @@ function onWindowResize() {
     composer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ================= 5. MediaPipe (修正) =================
+// ================= 5. MediaPipe (略) =================
 async function initMediaPipeSafe() {
     const video = document.getElementById('input_video');
     
-    // ... (权限检查保持不变)
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         enableMouseMode("MOUSE MODE (NO API)");
         return;
@@ -507,27 +518,20 @@ async function initMediaPipeSafe() {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
                 
-                // 1. 手部位置控制
                 if (activePhotoIdx === -1) {
                     inputState.x = 1.0 - lm[9].x;
                     inputState.y = lm[9].y;
                 }
                 
-                // 2. 握拳 (Fist) = 聚合/取消选中
                 const tips = [8, 12, 16, 20];
                 let avgDist = 0;
                 tips.forEach(i => avgDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y));
                 inputState.isFist = (avgDist / 4) < 0.22;
                 
-                // 【握拳操作】如果有选中照片，取消选中；否则触发聚合
                 if (inputState.isFist) {
                     activePhotoIdx = -1; 
-                } else {
-                    // 如果握拳松开，取消聚合
-                    // 注意：isFist 状态的切换在 updateLogic 中处理，这里只管 activePhotoIdx
                 }
                 
-                // 3. 捏合 (Pinch) = 选中/缩放
                 const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
                 inputState.isPinch = pinchDist < 0.05;
                 
@@ -535,23 +539,21 @@ async function initMediaPipeSafe() {
                     const now = Date.now();
                     
                     if (now - inputState.lastPinchTime > 1000) {
-                        // 【捏合操作】长捏 (>1s) 切换下一张照片
                         activePhotoIdx = (activePhotoIdx + 1) % photos.length;
                         inputState.lastPinchTime = now;
-                        inputState.isFist = false; // 捏合会打断握拳
-                        inputState.zoomLevel = 4.0; // 切换后重置缩放
+                        inputState.isFist = false;
+                        inputState.zoomLevel = 1.0; // 【重置缩放级别】
                     }
                     
-                    // 【捏合缩放】
                     if (activePhotoIdx !== -1) {
                         let scale = (pinchDist - 0.02) * 40.0;
-                        inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
+                        // 【捏合缩放级别调整】
+                        inputState.zoomLevel = Math.max(0.5, Math.min(2.5, scale)); 
                     }
                 }
             }
         });
 
-        // ... (Camera启动逻辑保持不变)
         const cam = new Camera(video, {
             onFrame: async () => { await hands.send({image: video}); },
             width: 640, height: 480
