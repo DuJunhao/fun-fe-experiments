@@ -7,7 +7,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // ================= 配置 =================
 const CONFIG = {
-    particleCount: 650, // 稍微增加粒子数量以丰富细节
+    particleCount: 650, 
     bucketXmlUrl: "https://storage.googleapis.com/beautiful-days/?prefix=christa/", 
     publicBaseUrl: "https://static.refinefuture.com/", 
     treeHeight: 90,
@@ -125,12 +125,11 @@ function onGlobalMouseMove(event) {
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
         if (hit) {
             document.body.style.cursor = 'pointer';
-            if(hit.children[0]) hit.children[0].material.emissiveIntensity = 3.0;
+            // 【修改点】移除了原本在这里的边框高亮代码
+            // 鼠标放上去现在只会变小手，不会有光效变化
         } else {
             document.body.style.cursor = 'default';
-            photos.forEach(p => {
-                if(p.children[0]) p.children[0].material.emissiveIntensity = 0.8;
-            });
+            // 【修改点】移除了原本在这里的恢复亮度的代码
         }
     }
 }
@@ -187,7 +186,7 @@ function initThree() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2; // 稍微调亮一点
+    renderer.toneMappingExposure = 1.2; 
     container.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0x111111, 1);
@@ -199,6 +198,7 @@ function initThree() {
     scene.add(centerLight);
     
     const renderPass = new RenderPass(scene, camera);
+    // 辉光参数保持不变，用于其他装饰粒子
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
     bloomPass.threshold = 0.08; bloomPass.strength = 1.8; bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
@@ -239,22 +239,17 @@ function createChristmasObjects() {
         const randType = Math.random();
 
         if (randType < 0.45) {
-            // 45% 经典装饰球 (金/红)
             mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
         } else if (randType < 0.75) {
-            // 30% 礼物盒 (红/绿)，随机旋转
             mesh = new THREE.Mesh(giftGeo, Math.random() > 0.5 ? matRedShiny : matGreenMatte);
             mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
         } else {
-            // 25% 糖果棒 (发光白)，随机方向
             mesh = new THREE.Mesh(candyGeo, matCandy);
-            // 让糖果棒大多竖直方向随机倾斜
             mesh.rotation.x = (Math.random() - 0.5) * 0.8;
             mesh.rotation.z = (Math.random() - 0.5) * 0.8;
             mesh.rotation.y = Math.random() * Math.PI;
         }
         
-        // 为不同类型的粒子设置略微不同的缩放
         const scaleVar = 0.8 + Math.random() * 0.4;
         mesh.scale.set(scaleVar, scaleVar, scaleVar);
 
@@ -266,7 +261,15 @@ function createChristmasObjects() {
     // === 照片卡片 ===
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.5); 
-    const borderMat = matGold.clone(); borderMat.emissiveIntensity = 0.8;
+    
+    // 【修改点】重新定义边框材质，使其不发光
+    const borderMat = new THREE.MeshPhysicalMaterial({
+        color: CONFIG.colors.gold, // 依然是金色
+        metalness: 0.8,           // 金属质感
+        roughness: 0.3,           // 稍微粗糙一点，自然反光
+        emissive: 0x000000,       // 发光颜色为黑
+        emissiveIntensity: 0.0    // 发光强度为0，彻底关闭自发光
+    });
     
     imageList.forEach((filename, i) => {
         const mat = new THREE.MeshBasicMaterial({ map: loadingTex, side: THREE.DoubleSide });
