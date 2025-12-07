@@ -43,6 +43,10 @@ const inputState = {
 const textureLoader = new THREE.TextureLoader();
 textureLoader.setCrossOrigin('anonymous');
 
+// 创建一个简单的 1x1 灰色占位纹理，防止照片加载前一片空白
+const placeholderTex = new THREE.DataTexture(new Uint8Array([50, 50, 50, 255]), 1, 1, THREE.RGBAFormat);
+placeholderTex.needsUpdate = true;
+
 // ================= 1. 启动入口 =================
 async function fetchBucketPhotos() {
     const loaderText = document.getElementById('loader-text');
@@ -77,27 +81,20 @@ async function fetchBucketPhotos() {
     initMediaPipe(); 
 }
 
-// ================= 2. 核心交互逻辑 (重写修复版) =================
+// ================= 2. 核心交互逻辑 (修复版) =================
 
-// 辅助函数：根据鼠标位置，强制检测有没有点到照片
-// 返回找到的 Photo Mesh，如果没找到返回 null
 function getIntersectedPhoto(clientX, clientY) {
-    // 1. 转换鼠标坐标
     const mv = new THREE.Vector2();
     mv.x = (clientX / window.innerWidth) * 2 - 1;
     mv.y = -(clientY / window.innerHeight) * 2 + 1;
 
-    // 2. 发射射线
     raycaster.setFromCamera(mv, camera);
-    // recursive: true 确保即使点到边框(子物体)也能检测到
+    // 这里的 true 表示递归检测子物体（比如边框）
     const intersects = raycaster.intersectObjects(photos, true);
 
     if (intersects.length > 0) {
         let hitObj = intersects[0].object;
-        
-        // 3. 向上查找：如果你点到了边框，就找它的父级（照片主体）
-        // 我们的照片结构是 Mesh(Photo) -> Children(Border)
-        // 所以如果 hitObj 没有 userData.type，就看看它的 parent
+        // 向上查找，确保拿到的是照片主体
         if (hitObj.userData && hitObj.userData.type === 'PHOTO') {
             return hitObj;
         } else if (hitObj.parent && hitObj.parent.userData && hitObj.parent.userData.type === 'PHOTO') {
@@ -108,7 +105,6 @@ function getIntersectedPhoto(clientX, clientY) {
 }
 
 function onGlobalMouseMove(event) {
-    // 更新鼠标位置用于视角旋转
     mouseVector.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouseVector.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
@@ -117,19 +113,18 @@ function onGlobalMouseMove(event) {
         inputState.y = event.clientY / window.innerHeight;
     }
     
-    // 鼠标悬停高亮逻辑 (仅视觉效果，不影响逻辑)
-    // 只有在没锁定的情况下才高亮，省资源
+    // 鼠标悬停高亮 (视觉反馈)
     if (!inputState.mouseLockedPhoto) {
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
         if (hit) {
             document.body.style.cursor = 'pointer';
-            // 简单的临时高亮
+            // 高亮边框
             hit.children.forEach(c => {
-                if(c.material && c.material.emissive) c.material.emissiveIntensity = 2.0;
+                if(c.material && c.material.emissive) c.material.emissiveIntensity = 2.5;
             });
         } else {
             document.body.style.cursor = 'default';
-            // 恢复所有照片亮度 (粗略恢复，防止卡住)
+            // 恢复亮度
             photos.forEach(p => {
                 p.children.forEach(c => {
                     if(c.material && c.material.emissive) c.material.emissiveIntensity = 0.8;
@@ -142,35 +137,30 @@ function onGlobalMouseMove(event) {
 function onGlobalMouseDown(event) {
     if (event.button !== 0) return; // 只左键
 
-    // 【核心修复】点击瞬间，立刻重新检测点到了谁
-    // 不依赖 mousemove 的缓存，确保精准
+    // 点击瞬间进行精确检测
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
     if (targetPhoto) {
-        // --- 场景 A：确实点到了照片 ---
-        // console.log("Locked Photo:", targetPhoto.userData.idx);
-        inputState.mouseLockedPhoto = true; // 开启锁定模式
-        activePhotoIdx = targetPhoto.userData.idx; // 记录 ID
-        inputState.isFist = false; // 强制关闭聚合
+        // --- A: 点到照片 ---
+        inputState.mouseLockedPhoto = true; // 锁定
+        activePhotoIdx = targetPhoto.userData.idx;
+        inputState.isFist = false;
         updateStatusText("MEMORY LOCKED", "#00ffff");
     } else {
-        // --- 场景 B：点到了空白处 ---
+        // --- B: 点到空白 ---
         if (inputState.mouseLockedPhoto) {
-            // 如果之前是锁定状态 -> 现在解锁
-            inputState.mouseLockedPhoto = false;
+            inputState.mouseLockedPhoto = false; // 解锁
             activePhotoIdx = -1;
             updateStatusText("GALAXY MODE");
         } else {
-            // 如果之前没锁定 -> 开始聚合 (长按)
-            inputState.isFist = true;
+            inputState.isFist = true; // 聚合
             updateStatusText("FORMING TREE", "#FFD700");
         }
     }
 }
 
 function onGlobalMouseUp(event) {
-    // 只有在“非锁定”状态下，松开鼠标才取消聚合
-    // 这样如果你锁定了照片，松开鼠标照片依然会在面前
+    // 只有没锁定时，松开才取消聚合
     if (!inputState.mouseLockedPhoto) {
         inputState.isFist = false;
         updateStatusText("GALAXY MODE");
@@ -263,12 +253,10 @@ function createMerryChristmas() {
 }
 
 function createObjects() {
-    // 【修复】恢复高级材质
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 1.0, roughness: 0.2, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.3 });
     const matRed = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.6, roughness: 0.3, emissive: CONFIG.colors.red, emissiveIntensity: 0.2 });
     const matGreen = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.green, metalness: 0.1, roughness: 0.8, emissive: 0x002200, emissiveIntensity: 0.1 });
 
-    // 【修复】恢复多种几何形状
     const geoms = [
         new THREE.SphereGeometry(1.2, 24, 24),
         new THREE.BoxGeometry(1.8, 1.8, 1.8),
@@ -279,7 +267,6 @@ function createObjects() {
     // 装饰粒子
     for(let i=0; i<CONFIG.particleCount; i++) {
         const rnd = Math.random();
-        // 【修复】随机材质和形状
         const mat = rnd > 0.5 ? matGold : (rnd > 0.25 ? matRed : matGreen);
         const geom = geoms[Math.floor(Math.random()*geoms.length)];
         
@@ -291,28 +278,35 @@ function createObjects() {
 
     // 照片
     const photoGeo = new THREE.PlaneGeometry(9, 12);
-    // 【修复】恢复金色边框
-    const borderGeo = new THREE.BoxGeometry(9.4, 12.4, 0.5); // 边框略大
+    // 金色边框
+    const borderGeo = new THREE.BoxGeometry(9.4, 12.4, 0.5); 
     const borderMat = matGold.clone(); borderMat.emissiveIntensity = 0.8;
     
     imageList.forEach((filename, i) => {
-        const mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+        // 【核心修复】使用占位纹理初始化材质，防止空白
+        const mat = new THREE.MeshBasicMaterial({ 
+            map: placeholderTex, // 先用占位图
+            side: THREE.DoubleSide 
+        });
+        
         const url = CONFIG.publicBaseUrl + filename;
         
+        // 异步加载真实图片
         textureLoader.load(url, (tex) => {
             tex.colorSpace = THREE.SRGBColorSpace;
-            mat.map = tex; mat.needsUpdate = true;
+            mat.map = tex; // 替换为真实图片
+            mat.needsUpdate = true;
         });
 
         const mesh = new THREE.Mesh(photoGeo, mat);
         const border = new THREE.Mesh(borderGeo, borderMat);
-        border.position.z = -0.1; // 边框稍微靠后一点，避免Z-fighting，但也可能挡住点击
-        mesh.add(border); // 边框是子物体
+        border.position.z = -0.1; 
+        mesh.add(border);
         
         initParticle(mesh, 'PHOTO', i);
         scene.add(mesh);
         particles.push(mesh);
-        photos.push(mesh); // 存入 photos 数组用于检测
+        photos.push(mesh); 
     });
 }
 
@@ -340,7 +334,7 @@ function initParticle(mesh, type, idx) {
     mesh.position.copy(explodePos);
 }
 
-// ================= 4. 动画循环 (修复状态机) =================
+// ================= 4. 动画循环 =================
 function updateLogic() {
     // 优先级: 锁定照片 > 握拳/长按 > 默认散开
     if (inputState.mouseLockedPhoto) {
