@@ -23,28 +23,27 @@ app.get('/health', (req, res) => res.status(200).send('OK'));
 // 2. 静态资源
 app.use(express.static(publicPath));
 
-// 3. API 接口 (这里改动了！)
+// 3. API 接口 
 app.get('/api/images', async (req, res) => {
     try {
         if (!BUCKET_NAME) return res.status(500).json({ error: 'Bucket未配置' });
         
         const storage = new Storage();
+        // 1. 动态获取 Bucket 里的文件列表 (保持动态性)
         const [files] = await storage.bucket(BUCKET_NAME).getFiles();
         
-        // 过滤图片
+        // 2. 过滤图片
         const imageFiles = files.filter(f => /\.(jpg|png|gif|webp)$/i.test(f.name));
         
-        // --- 核心修改 ---
+        // 3. --- 核心修改：拼接 static 域名 ---
         const assets = imageFiles.map(f => {
-            // f.name 的值已经是 "christa/xxx.jpg" 了
-            // 所以我们直接拼在域名后面即可
             return { 
                 name: f.name, 
-                // 使用新的静态子域名
+                // 这里把 f.name (例如 "christa/1.jpg") 拼接到 static 域名后
+                // 结果: https://static.refinefuture.com/christa/1.jpg
                 url: `https://static.refinefuture.com/${f.name}` 
             };
         });
-        // ----------------
 
         res.json(assets);
     } catch (e) { 
