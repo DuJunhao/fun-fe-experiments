@@ -16,6 +16,7 @@ const CONFIG = {
     colors: { 
         gold: 0xFFD700,
         red: 0xDC143C,
+        green: 0x0B3d0B,
         emissiveGold: 0xAA8800
     }
 };
@@ -147,7 +148,7 @@ function onGlobalMouseDown(event) {
 
     if (targetPhoto) {
         // --- 场景 A：确实点到了照片 ---
-        console.log("Locked Photo:", targetPhoto.userData.idx);
+        // console.log("Locked Photo:", targetPhoto.userData.idx);
         inputState.mouseLockedPhoto = true; // 开启锁定模式
         activePhotoIdx = targetPhoto.userData.idx; // 记录 ID
         inputState.isFist = false; // 强制关闭聚合
@@ -262,14 +263,27 @@ function createMerryChristmas() {
 }
 
 function createObjects() {
+    // 【修复】恢复高级材质
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 1.0, roughness: 0.2, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 0.3 });
     const matRed = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.6, roughness: 0.3, emissive: CONFIG.colors.red, emissiveIntensity: 0.2 });
+    const matGreen = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.green, metalness: 0.1, roughness: 0.8, emissive: 0x002200, emissiveIntensity: 0.1 });
 
-    // 装饰球
-    const sphereGeo = new THREE.SphereGeometry(1.2, 16, 16);
+    // 【修复】恢复多种几何形状
+    const geoms = [
+        new THREE.SphereGeometry(1.2, 24, 24),
+        new THREE.BoxGeometry(1.8, 1.8, 1.8),
+        new THREE.IcosahedronGeometry(1.5),
+        new THREE.TorusGeometry(1.0, 0.3, 16, 32)
+    ];
+
+    // 装饰粒子
     for(let i=0; i<CONFIG.particleCount; i++) {
-        const mat = Math.random() > 0.5 ? matGold : matRed;
-        const mesh = new THREE.Mesh(sphereGeo, mat);
+        const rnd = Math.random();
+        // 【修复】随机材质和形状
+        const mat = rnd > 0.5 ? matGold : (rnd > 0.25 ? matRed : matGreen);
+        const geom = geoms[Math.floor(Math.random()*geoms.length)];
+        
+        const mesh = new THREE.Mesh(geom, mat);
         initParticle(mesh, 'DECOR', i);
         scene.add(mesh);
         particles.push(mesh);
@@ -277,6 +291,7 @@ function createObjects() {
 
     // 照片
     const photoGeo = new THREE.PlaneGeometry(9, 12);
+    // 【修复】恢复金色边框
     const borderGeo = new THREE.BoxGeometry(9.4, 12.4, 0.5); // 边框略大
     const borderMat = matGold.clone(); borderMat.emissiveIntensity = 0.8;
     
