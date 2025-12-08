@@ -308,17 +308,59 @@ function createChristmasObjects() {
     }
 
     // 2. 灯带
-    const lightCount = 120;
-    for(let i=0; i<lightCount; i++) {
-        const mesh = new THREE.Mesh(lightBulbGeo, matLightString);
-        initParticle(mesh, 'LIGHT', i + 10000); 
+   const ribbonCount = 600; 
+    const ribbonGeo = new THREE.BoxGeometry(2.5, 0.4, 0.8); // 扁长方体模拟光带片段
+    // 使用高亮发光材质
+    const matRibbon = new THREE.MeshBasicMaterial({ 
+        color: 0xFFD700, // 金色
+    }); 
 
-        const progress = i / lightCount; 
-        const angle = progress * Math.PI * 14; 
+    for(let i = 0; i < ribbonCount; i++) {
+        const mesh = new THREE.Mesh(ribbonGeo, matRibbon);
+        
+        // 标记类型为 RIBBON，稍后在动画中会用到这个标记来隐藏它
+        initParticle(mesh, 'RIBBON', i + 10000); 
+
+        // --- 螺旋数学计算 ---
+        const progress = i / ribbonCount; 
+        
+        // 圈数：例如 6 圈 (6 * 2PI)
+        const angle = progress * Math.PI * 12; 
+        
+        // 高度：从下往上
         const y = (progress - 0.5) * CONFIG.treeHeight; 
-        const radius = (1.0 - progress) * 45 + 2; 
+        
+        // 半径：随着高度升高，半径变小 (圆锥形)
+        // 底部半径约 50，顶部半径约 2
+        const radius = (1.0 - progress) * 45 + 5; 
 
-        mesh.userData.treePos.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+
+        // 设置树形态的目标位置
+        mesh.userData.treePos.set(x, y, z);
+        
+        // --- 关键：计算朝向让光带平滑 ---
+        // 计算下一个点的坐标，让当前粒子“看向”下一个点，形成连贯的带子
+        const nextProgress = (i + 1) / ribbonCount;
+        const nextAngle = nextProgress * Math.PI * 12;
+        const nextY = (nextProgress - 0.5) * CONFIG.treeHeight;
+        const nextRadius = (1.0 - nextProgress) * 45 + 5;
+        const nextPos = new THREE.Vector3(
+            Math.cos(nextAngle) * nextRadius, 
+            nextY, 
+            Math.sin(nextAngle) * nextRadius
+        );
+        
+        mesh.lookAt(nextPos);
+        
+        // 修正旋转，让扁平面朝外 (根据具体几何体轴向微调，这里通常不需要大改，或者转90度)
+        // BoxGeometry默认不需要额外旋转即可形成带状，如有扭曲可调整下方代码：
+        // mesh.rotateZ(Math.PI / 2); 
+
+        // 存储计算好的旋转角度，以便在组成树的时候恢复
+        mesh.userData.treeRot = mesh.rotation.clone();
+
         scene.add(mesh);
         particles.push(mesh);
     }
@@ -472,55 +514,70 @@ function updateLogic() {
     particles.forEach(mesh => {
         const data = mesh.userData;
         let tPos = new THREE.Vector3();
-        let tScale = data.baseScale.clone();
+        let tScale = data.baseScale.clone(); // 获取基础缩放
         
-        // 粒子自转
+        // 粒子自转 (原有逻辑)
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
-        // --- A. 计算“基准位置” (未旋转前的位置) ---
+        // --- A. 计算“基准位置” ---
         if (targetState === 'TREE') {
             tPos.copy(data.treePos);
-            tPos.y += Math.sin(time*2 + data.randomPhase) * 1.0; 
+            
+            // 如果是光带，不需要上下浮动，也不需要自转，需要保持连贯
+            if (data.type === 'RIBBON') {
+                 // 恢复到初始计算的旋转角度，保证光带平滑
+                 if (data.treeRot) mesh.rotation.copy(data.treeRot);
+            } else {
+                 // 其他装饰物保持原有浮动效果
+                 tPos.y += Math.sin(time*2 + data.randomPhase) * 1.0; 
+            }
+            
             if(data.type === 'PHOTO') tScale.multiplyScalar(0.6); 
         } 
         else if (targetState === 'EXPLODE') {
+            // ... (原有逻辑) ...
             tPos.copy(data.explodePos);
             tPos.x += Math.sin(time*0.5 + data.randomPhase)*2; 
             tPos.y += Math.cos(time*0.5 + data.randomPhase)*2;
         }
         else if (targetState === 'PHOTO') {
+            // ... (原有逻辑) ...
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                // 被选中的照片：不用算基准位置，后面会直接覆盖
+                // ...
             } else {
-                // 其他背景粒子：位置扩散开，作为背景
                 tPos.copy(data.explodePos).multiplyScalar(2.0); 
             }
         }
 
-        // --- B. 应用公转 & 处理特殊状态 ---
+        // ==========================================
+        // 新增修改：控制光带的显隐
+        // ==========================================
+        if (data.type === 'RIBBON') {
+            if (targetState === 'TREE') {
+                // 在树形态下，保持原大
+                tScale.set(1, 1, 1);
+            } else {
+                // 在分散(EXPLODE) 或 照片(PHOTO) 模式下，直接隐藏
+                tScale.set(0, 0, 0);
+            }
+        }
+        // ==========================================
+
+        // ... (后续原有的 B. 应用公转 & lerp 逻辑保持不变) ...
         
         const isActivePhoto = (targetState === 'PHOTO' && data.type === 'PHOTO' && data.idx === activePhotoIdx);
 
         if (isActivePhoto) {
-            // 【关键修改】如果是被点击的照片：
-            // 1. 不应用 globalRot (不公转)
-            // 2. 强制固定在相机正前方
+            // ... (原有逻辑) ...
             tPos.set(0, 0, CONFIG.camZ - 50); 
-            
             mesh.lookAt(camera.position); 
-            mesh.rotation.set(0, 0, 0); // 停止自转，正对屏幕
-            
-            // 鼠标悬停时的缩放单独处理
+            mesh.rotation.set(0, 0, 0);
             tScale.multiplyScalar(inputState.zoomLevel); 
-
         } else {
-            // 【关键修改】如果是其他粒子（背景、树、未选中的照片）：
-            // 手动应用绕 Y 轴的公转
-            // 这样背景就会一直转，不会因为点击了照片而停止
+            // ... (原有逻辑) ...
             tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
             
-            // 处理鼠标悬停放大 (仅限未锁定模式)
             if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
                  tScale.multiplyScalar(data.hoverScale);
             }
