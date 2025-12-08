@@ -686,34 +686,32 @@ async function initMediaPipeSafe() {
 
                 // 3. 捏合检测 (食指指尖8 和 拇指指尖4)
                 const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                
-                // 【修改点A】稍微放宽判定距离，从 0.05 改为 0.08，更容易触发
-                inputState.isPinch = pinchDist < 0.08;
+                inputState.isPinch = pinchDist < 0.08; // 判定距离
 
                 if (inputState.isPinch) {
+                    // --- 捏合状态：选中或保持照片 ---
                     const now = Date.now();
-                    // 只有在没有选中照片，且距离上次触发超过1秒时，才随机选中一张
-                    if (now - inputState.lastPinchTime > 1000 && activePhotoIdx === -1) {
+                    
+                    // 如果当前没照片，且冷却时间已过，随机选一张
+                    if (activePhotoIdx === -1 && now - inputState.lastPinchTime > 500) {
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
                         inputState.lastPinchTime = now;
-                        // 触发捏合时，重置缩放
                         inputState.zoomLevel = 2.2; 
                         updateStatusText("MEMORY UNLOCKED", "#00ffff");
                     }
                     
-                    // 简单的缩放控制：根据捏合距离调整
-                    // 捏得越开(接近0.08)，放大倍数越大
+                    // 缩放控制
                     let scale = (pinchDist - 0.02) * 60.0;
                     inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
-                }
 
-                // 只有握拳会取消选中
-                if (inputState.isFist) {
-                    activePhotoIdx = -1;
-                    updateStatusText("FORMING TREE", "#FFD700");
-                } else if (activePhotoIdx === -1 && !inputState.isPinch) {
-                    // 如果既没握拳也没捏合，且没看照片，恢复状态
-                    updateStatusText("GALAXY MODE");
+                } else {
+                    // --- 【新增关键逻辑】：松开状态 ---
+                    
+                    // 如果当前正显示照片，但手松开了 -> 立即关闭照片
+                    if (activePhotoIdx !== -1) {
+                        activePhotoIdx = -1;
+                        updateStatusText("GALAXY MODE");
+                    }
                 }
             }
         });
