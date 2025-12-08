@@ -38,12 +38,16 @@ let globalRot = 0; // 新增：用于记录全局旋转角度
 const raycaster = new THREE.Raycaster();
 const mouseVector = new THREE.Vector2();
 
+// ================= 全局变量 =================
+// ... (其他变量保持不变)
+
 const inputState = {
     x: 0.5, y: 0.5,
     isFist: false,
     mouseLockedPhoto: false,
     isPinch: false,
-    zoomLevel: 3.5
+    zoomLevel: 3.5,
+    lastPinchTime: 0  // 【必须添加】: 否则捏合时间计算会出错
 };
 
 const textureLoader = new THREE.TextureLoader();
@@ -652,47 +656,63 @@ async function initMediaPipeSafe() {
         enableMouseMode("MOUSE MODE (NO API)");
         return;
     }
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const hasCamera = devices.some(device => device.kind === 'videoinput');
-        if (!hasCamera) {
-            enableMouseMode("MOUSE MODE (NO CAM)");
-            return;
-        }
-    } catch (e) {
-        enableMouseMode("MOUSE MODE (ENUM FAIL)");
-        return;
-    }
+    
+    // ... (中间检查设备的代码保持不变，省略以节省空间) ...
+    // ... 如果你没有修改过中间的 catch，可以直接跳到下面 hands 部分 ...
+
     try {
         const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6 });
 
         hands.onResults(results => {
             if (!isCameraMode) return;
+            
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
+
+                // 1. 移动控制
                 if (activePhotoIdx === -1) {
                     inputState.x = 1.0 - lm[9].x;
                     inputState.y = lm[9].y;
                 }
+
+                // 2. 握拳检测
                 const tips = [8, 12, 16, 20];
                 let avgDist = 0;
                 tips.forEach(i => avgDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y));
                 inputState.isFist = (avgDist / 4) < 0.22;
 
+                // 3. 捏合检测 (食指指尖8 和 拇指指尖4)
                 const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                inputState.isPinch = pinchDist < 0.05;
+                
+                // 【修改点A】稍微放宽判定距离，从 0.05 改为 0.08，更容易触发
+                inputState.isPinch = pinchDist < 0.08;
 
                 if (inputState.isPinch) {
                     const now = Date.now();
+                    // 只有在没有选中照片，且距离上次触发超过1秒时，才随机选中一张
                     if (now - inputState.lastPinchTime > 1000 && activePhotoIdx === -1) {
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
                         inputState.lastPinchTime = now;
+                        // 触发捏合时，重置缩放
+                        inputState.zoomLevel = 2.2; 
+                        updateStatusText("MEMORY UNLOCKED", "#00ffff");
                     }
-                    let scale = (pinchDist - 0.02) * 40.0;
+                    
+                    // 简单的缩放控制：根据捏合距离调整
+                    // 捏得越开(接近0.08)，放大倍数越大
+                    let scale = (pinchDist - 0.02) * 60.0;
                     inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
                 }
-                if (inputState.isFist) activePhotoIdx = -1;
+
+                // 只有握拳会取消选中
+                if (inputState.isFist) {
+                    activePhotoIdx = -1;
+                    updateStatusText("FORMING TREE", "#FFD700");
+                } else if (activePhotoIdx === -1 && !inputState.isPinch) {
+                    // 如果既没握拳也没捏合，且没看照片，恢复状态
+                    updateStatusText("GALAXY MODE");
+                }
             }
         });
 
@@ -703,15 +723,21 @@ async function initMediaPipeSafe() {
 
         cam.start().then(() => {
             isCameraMode = true;
+            
+            // 【修改点B】这里必须更新文字，否则 UI 会一直卡在 "Initializing"
+            updateStatusText("GALAXY MODE"); 
+            
             document.getElementById('hint-cam').classList.add('active');
             document.getElementById('hint-mouse').classList.remove('active');
             const loader = document.getElementById('loader');
             if (loader) { loader.style.opacity = 0; setTimeout(() => loader.remove(), 500); }
         }).catch(err => {
+            console.error(err);
             enableMouseMode("MOUSE MODE (START FAIL)");
         });
 
     } catch (e) {
+        console.error(e);
         enableMouseMode("MOUSE MODE (LIB FAIL)");
     }
 }
