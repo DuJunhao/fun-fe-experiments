@@ -834,6 +834,19 @@ async function initMediaPipeSafe() {
 
                     // 触发解锁 (0.5秒冷却)
                     if (activePhotoIdx === -1 && now - inputState.lastPinchTime > 500) {
+
+                        // ===========================================
+                        // 【新增】手势解锁照片时，播放音乐！
+                        // ===========================================
+                        const bgm = document.getElementById('bgm');
+                        if (bgm && bgm.paused) {
+                            bgm.volume = 0.5;
+                            // 注意：有些浏览器可能因为没有“点击”操作而拦截自动播放
+                            // 但通常用户已经点击过“允许摄像头”按钮，这算作一次交互，所以应该能响
+                            bgm.play().catch(e => console.log("手势播放被拦截:", e));
+                        }
+                        // ===========================================
+                        
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
                         inputState.lastPinchTime = now;
                         inputState.zoomLevel = 2.2; // 初始放大一点
