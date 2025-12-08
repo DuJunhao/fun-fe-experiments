@@ -379,18 +379,14 @@ function createChristmasObjects() {
     // ==========================================
     // 5. 灯带 (Light Ribbon) - 【核心修改区域】
     // ==========================================
-    // ==========================================
-    // 5. 灯带 (Light Ribbon) - 【最终优化版】
-    // ==========================================
     const ribbonPoints = [];
-    const ribbonSegments = 500; // 增加分段，更顺滑
-    const ribbonTurns = 9;      // 【修改】增加圈数，让底部更密
+    const ribbonSegments = 500; 
+    const ribbonTurns = 9;      // 圈数保持 9，缠绕紧密
     
-    // 【修改】收紧底部半径 (55 -> 45)，让它紧贴树身，不再悬空
+    // 底部参数保持优化后的数值
     const bottomRadius = 45;    
-    const topRadius = 0.5;      // 顶部收得更尖
+    const topRadius = 0.5;      
 
-    // 【修改】高度范围：从 -50 (比树底更低) 到 45 (树顶)
     const yStart = -50; 
     const yEnd = 45;
 
@@ -398,10 +394,7 @@ function createChristmasObjects() {
         const progress = i / ribbonSegments;
         const angle = progress * Math.PI * 2 * ribbonTurns;
         
-        // 使用线性插值计算高度
         const y = THREE.MathUtils.lerp(yStart, yEnd, progress);
-        
-        // 半径随着高度变化
         const radius = THREE.MathUtils.lerp(bottomRadius, topRadius, progress);
         
         const x = Math.cos(angle) * radius;
@@ -414,11 +407,17 @@ function createChristmasObjects() {
     // 保持细线 (0.3)
     const tubeGeo = new THREE.TubeGeometry(spiralPath, 800, 0.3, 8, false);
 
-    // 保持高亮发光材质
+    // 【核心修改】：材质颜色改为 香槟金/暖白
     const matGlowingRibbon = new THREE.MeshStandardMaterial({
-        color: 0x000000,        
-        emissive: 0xFF8800,     // 深金橙色
-        emissiveIntensity: 4.0, // 强力发光
+        color: 0x000000,        // 基础色黑
+        
+        // 之前的 0xFF8800 太红了
+        // 改为 0xFFE6AA (淡金色/暖白)，这样光晕就是柔和的金黄色
+        emissive: 0xFFE6AA,     
+        
+        // 强度保持高位，确保发光
+        emissiveIntensity: 3.5, 
+        
         roughness: 0.4,
         metalness: 1.0
     });
