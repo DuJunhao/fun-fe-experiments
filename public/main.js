@@ -7,10 +7,10 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // ================= 配置 =================
 const CONFIG = {
-    particleCount: 800,
+    particleCount: 1500,
     bucketXmlUrl: "https://storage.googleapis.com/beautiful-days/?prefix=christa/",
     publicBaseUrl: "https://static.refinefuture.com/",
-    treeHeight: 90,
+    treeHeight: 85,
     explodeRadius: 150,
     camZ: 130,
     // 增加一点照片的自转速度，让效果更明显
@@ -434,12 +434,18 @@ function createChristmasObjects() {
 function initParticle(mesh, type, idx) {
     const h = Math.random();
     let radiusMod = 1.0;
+    // 讓葉子（綠色禮物盒）稍微靠內一點，形成樹的主體
     if (type === 'LEAF') radiusMod = 0.85;
 
     const angle = h * Math.PI * 25 + idx * 0.1;
-    const r = ((1.05 - h) * 40) * radiusMod;
+    
+    // 【修改點 3】將 40 改為 36，讓整體分佈更緊湊
+    // 原來是: const r = ((1.05 - h) * 40) * radiusMod;
+    const r = ((1.05 - h) * 36) * radiusMod;
+
     const treePos = new THREE.Vector3(Math.cos(angle) * r, (h - 0.5) * CONFIG.treeHeight, Math.sin(angle) * r);
 
+    // ... (後面的代碼保持不變) ...
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     const rad = 60 + Math.random() * CONFIG.explodeRadius;
