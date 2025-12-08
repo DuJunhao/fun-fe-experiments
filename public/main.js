@@ -200,9 +200,23 @@ function updateStatusText(text, color = "#fff") {
     }
 }
 
-// ================= 3. Three.js 场景构建 =================
 function initThree() {
-    // 【1. 清空旧画布】这行非常重要！
+    console.log("正在初始化 initThree..."); // 【调试】确认函数进来了吗？
+
+    // ===========================================
+    // 【修改】把监听器移到最前面！防止后面报错阻断
+    // ===========================================
+    window.removeEventListener('mousedown', onGlobalMouseDown); // 先移除旧的，防止重复
+    window.addEventListener('mousedown', onGlobalMouseDown);
+    window.addEventListener('mousemove', onGlobalMouseMove);
+    window.addEventListener('mouseup', onGlobalMouseUp);
+    window.addEventListener('wheel', onGlobalWheel);
+    window.addEventListener('resize', onWindowResize);
+    window.addEventListener('contextmenu', e => e.preventDefault());
+    console.log("鼠标监听器已挂载"); 
+    // ===========================================
+
+    // 【1. 清空旧画布】
     const container = document.getElementById('canvas-container');
     container.innerHTML = '';
 
@@ -219,8 +233,8 @@ function initThree() {
     renderer = new THREE.WebGLRenderer({ antialias: true, stencil: false, depth: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.ReinhardToneMapping; // 换一种映射模式，光线更柔和
-    renderer.toneMappingExposure = 2.0; // 提高整体曝光度，让更多物体进入发光阈值
+    renderer.toneMapping = THREE.ReinhardToneMapping; 
+    renderer.toneMappingExposure = 2.0; 
     container.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
@@ -233,22 +247,20 @@ function initThree() {
 
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.8; // 【关键】建议调低！越低越容易发光 (0 = 全发光, 1 = 只有极亮才发光)
-    bloomPass.strength = 1.5;  // 【关键】建议调高！光晕的强度 (建议 1.5 ~ 3.0)
-    bloomPass.radius = 0.5;    // 光晕扩散的范围 (0 ~ 1)
+    bloomPass.threshold = 0.8; 
+    bloomPass.strength = 1.5; 
+    bloomPass.radius = 0.5; 
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
 
-    createChristmasObjects();
-    createMerryChristmas();
-
-    window.addEventListener('mousemove', onGlobalMouseMove);
-    window.addEventListener('mousedown', onGlobalMouseDown);
-    window.addEventListener('mouseup', onGlobalMouseUp);
-    window.addEventListener('wheel', onGlobalWheel);
-    window.addEventListener('resize', onWindowResize);
-    window.addEventListener('contextmenu', e => e.preventDefault());
+    // 【注意检查】如果这里面的代码报错，后面就会停止运行
+    try {
+        createChristmasObjects();
+        createMerryChristmas();
+    } catch (e) {
+        console.error("创建3D对象时出错:", e);
+    }
 
     animate();
 }
@@ -846,7 +858,7 @@ async function initMediaPipeSafe() {
                             bgm.play().catch(e => console.log("手势播放被拦截:", e));
                         }
                         // ===========================================
-                        
+
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
                         inputState.lastPinchTime = now;
                         inputState.zoomLevel = 2.2; // 初始放大一点
