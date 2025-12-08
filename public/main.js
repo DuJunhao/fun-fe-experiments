@@ -399,11 +399,11 @@ function createChristmasObjects() {
         particles.push(containerGroup);
     }
 
-    // ==========================================
-    // 5. 灯带 (保持你满意的香槟金效果)
+   // ==========================================
+    // 5. 灯带 (Light Ribbon) - 【双层光晕增强版】
     // ==========================================
     const ribbonPoints = [];
-    const ribbonSegments = 500; 
+    const ribbonSegments = 600; // 分段再多一点，保证两层重合顺滑
     const ribbonTurns = 8.5;      
     const bottomRadius = 45;    
     const topRadius = 0.5;      
@@ -419,21 +419,47 @@ function createChristmasObjects() {
         const z = Math.sin(angle) * radius;
         ribbonPoints.push(new THREE.Vector3(x, y, z));
     }
-    
     const spiralPath = new THREE.CatmullRomCurve3(ribbonPoints);
-    const tubeGeo = new THREE.TubeGeometry(spiralPath, 800, 0.2, 8, false);
 
-    const matGlowingRibbon = new THREE.MeshStandardMaterial({
-        color: 0x000000,    // 基色保持黑色，这是做发光材质的惯例
-        emissive: 0xFF8800, // 这里改成了深橙色/琥珀色 (之前是 FFF0C0)
-        emissiveIntensity: 2.0, // 强度降低到 2.0 (之前是 3.5)
-        roughness: 0.2,     // 稍微增加一点粗糙度，让光显得柔和些
+    // 创建一个组来包裹内层和外层
+    const ribbonGroup = new THREE.Group();
+
+    // =================================================
+    // 层1：内芯 (Core) - 细、亮、实体
+    // =================================================
+    // 半径保持细的 0.2
+    const coreGeo = new THREE.TubeGeometry(spiralPath, 800, 0.2, 8, false);
+    const coreMat = new THREE.MeshStandardMaterial({
+        color: 0x000000,    
+        emissive: 0xFF8800,     // 暖橙色
+        emissiveIntensity: 2.0, // 高亮度实体
+        roughness: 0.2,
         metalness: 1.0
     });
+    const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+    ribbonGroup.add(coreMesh); // 加入组
 
-    const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
+    // =================================================
+    // 层2：光晕 (Halo) - 粗、透、虚幻
+    // =================================================
+    // 【关键】半径设为 0.6 (是内芯的3倍粗)，用来控制光晕范围
+    const haloGeo = new THREE.TubeGeometry(spiralPath, 800, 0.35, 8, false);
+    
+    const haloMat = new THREE.MeshBasicMaterial({
+        color: 0xFF8800, 
+        transparent: true,
+        opacity: 0.15,    // 2. 透明度调整：从 0.3 改为 0.15 (更通透，隐隐约约)
+        blending: THREE.AdditiveBlending, 
+        depthWrite: false, 
+        side: THREE.DoubleSide 
+    });
+    const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+    ribbonGroup.add(haloMesh);
 
-    ribbonMesh.userData = {
+    // =================================================
+    // 设置组的通用数据 (用于旋转和状态切换)
+    // =================================================
+    ribbonGroup.userData = {
         type: 'RIBBON',
         treePos: new THREE.Vector3(0, 0, 0),
         explodePos: new THREE.Vector3(0, 0, 0),
@@ -441,9 +467,8 @@ function createChristmasObjects() {
         rotSpeed: { x: 0, y: 0, z: 0 }
     };
 
-    scene.add(ribbonMesh);
-    particles.push(ribbonMesh);
-
+    scene.add(ribbonGroup);
+    particles.push(ribbonGroup);
     // ==========================================
     // 6. 树顶星星 (保持发光)
     // ==========================================
