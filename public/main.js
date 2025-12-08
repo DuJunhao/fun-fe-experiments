@@ -344,55 +344,42 @@ function createChristmasObjects() {
         particles.push(mesh);
     }
 
-    // 2. 灯带
-    // --- A. 定义螺旋路径 ---
+    // ==========================================
+    // 2. 灯带 (Light Ribbon) - 重新修正部分
+    // ==========================================
     const ribbonPoints = [];
-    const ribbonSegments = 200; // 路径上的采样点数量，越多越平滑
-    const ribbonTurns = 6.5;    // 缠绕圈数
-    const bottomRadius = 50;    // 底部半径
-    const topRadius = 2;        // 顶部半径
+    const ribbonSegments = 300; // 增加段数让它更圆滑
+    const ribbonTurns = 7;      // 圈数
+    const bottomRadius = 55;    // 底部稍微加大
+    const topRadius = 1;
 
     for (let i = 0; i <= ribbonSegments; i++) {
         const progress = i / ribbonSegments;
-        // 角度随进度增加
         const angle = progress * Math.PI * 2 * ribbonTurns;
-        // 高度从下到上
         const y = (progress - 0.5) * CONFIG.treeHeight;
-        // 半径逐渐变小
         const radius = THREE.MathUtils.lerp(bottomRadius, topRadius, progress);
-
         const x = Math.cos(angle) * radius;
         const z = Math.sin(angle) * radius;
         ribbonPoints.push(new THREE.Vector3(x, y, z));
     }
-    // 创建一条平滑的 3D 曲线
     const spiralPath = new THREE.CatmullRomCurve3(ribbonPoints);
+    const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.0, 8, false); // 半径1.0，不需要太粗
 
-    // --- B. 创建几何体 ---
-    // TubeGeometry 参数: 路径, 分段数(沿长度方向), 半径(粗细), 分段数(截面圆), 是否闭合
-    // 这里的 600 是为了让管道非常光滑
-    const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 12, false);
-
-    // --- C. 创建发光材质 ---
+    // 使用 Basic 材质确保它不受光照影响，始终明亮
     const matGlowingRibbon = new THREE.MeshBasicMaterial({ 
-    color: 0xFFD700, 
-    side: THREE.DoubleSide 
-});
+        color: 0xFFAA00, // 稍微偏橙的金黄色
+        side: THREE.DoubleSide
+    });
 
-    // --- D. 创建单一网格并加入系统 ---
-    // 现在整个光带是一个单独的 Mesh
     const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
     
-    ribbonMesh.frustumCulled = false; 
-
+    // 【关键】手动设置 userData，确保它在 EXPLODE 模式下的位置是 0,0,0 但缩放是 1
     ribbonMesh.userData = {
         type: 'RIBBON',
         treePos: new THREE.Vector3(0, 0, 0),
-        
-        explodePos: new THREE.Vector3(0, 0, 0), 
-
+        explodePos: new THREE.Vector3(0, 0, 0), // 爆炸模式也位于中心
         baseScale: new THREE.Vector3(1, 1, 1),
-        rotSpeed: { x: 0, y: 0, z: 0 } 
+        rotSpeed: { x: 0, y: 0, z: 0 } // 自身不自转，依靠 updateLogic 控制
     };
 
     scene.add(ribbonMesh);
@@ -545,7 +532,6 @@ function createCrossTexture(bgColorStr, crossColorStr) {
     return tex;
 }
 
-// ================= 4. 动画循环 =================
 function updateLogic() {
     // 状态切换逻辑
     if (activePhotoIdx !== -1) {
@@ -564,68 +550,79 @@ function updateLogic() {
     // 2. 鼠标上下控制场景俯仰 (X轴)
     const targetRotX = (inputState.y - 0.5) * 0.5;
     scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
-    scene.rotation.y = 0; // 确保场景不自转，依靠粒子位置旋转
+    scene.rotation.y = 0; 
 
     particles.forEach(mesh => {
         const data = mesh.userData;
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
 
-        // 默认自转 (仅对非光带物体有效，后面会覆盖光带的旋转)
+        // ===========================================
+        // 特殊处理：灯带 (RIBBON)
+        // 目的：确保灯带在任何模式下都可见，且正确旋转
+        // ===========================================
+        if (data.type === 'RIBBON') {
+            // 强制灯带始终位于中心
+            tPos.set(0, 0, 0);
+            
+            // 强制灯带始终保持原大小 (如果你想在爆炸时隐藏，可以把这里改为条件判断)
+            tScale.set(1, 1, 1); 
+
+            // 关键：始终让灯带绕Y轴自转，这样才有3D感
+            mesh.rotation.set(0, globalRot, 0);
+
+            // 如果是在 PHOTO 模式，且不是为了看灯带，可以让它稍微变暗或变小(可选)
+            if (targetState === 'PHOTO') {
+                // tScale.set(0, 0, 0); // 如果想在看照片时隐藏灯带，取消注释这行
+            }
+
+            // 直接应用变换，跳过后续通用逻辑
+            mesh.position.lerp(tPos, 0.08);
+            mesh.scale.lerp(tScale, 0.08);
+            return; // 【重要】直接跳过当前循环的后续步骤
+        }
+        
+        // ===========================================
+        // 下面是普通粒子的通用逻辑
+        // ===========================================
+
+        // 默认自转
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
-        // --- A. 计算目标位置和基础缩放 ---
         if (targetState === 'TREE') {
             tPos.copy(data.treePos);
-
-            if (data.type === 'RIBBON') {
-                // 【关键修复】: 强制设定光带在树形态下的状态
-                // 1. 缩放设为 1
-                tScale.set(1, 1, 1);
-                // 2. 【核心】强制让光带跟着 globalRot 同步旋转 (Y轴)，且不发生倾斜 (X/Z归零)
-                mesh.rotation.set(0, globalRot, 0); 
-            } else {
-                // 其他物体添加呼吸浮动效果
-                tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0;
-                if (data.type === 'PHOTO') tScale.multiplyScalar(0.6);
-            }
+            // 呼吸效果
+            tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0;
+            if (data.type === 'PHOTO') tScale.multiplyScalar(0.6);
 
         } else if (targetState === 'EXPLODE') {
             tPos.copy(data.explodePos);
+            // 漂浮效果
             tPos.x += Math.sin(time * 0.5 + data.randomPhase) * 2;
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
             
-            // 爆炸模式下隐藏光带
-            // if (data.type === 'RIBBON') tScale.set(0, 0, 0); <--- 保持这行被注释的状态
-
         } else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                // 选中照片的逻辑在下面单独处理
+                // 选中照片逻辑在后面
             } else {
                 tPos.copy(data.explodePos).multiplyScalar(2.0);
             }
-            // 照片模式下隐藏光带
-            //if (data.type === 'RIBBON') tScale.set(0, 0, 0);
         }
 
         // --- B. 应用位置变换 ---
         const isActivePhoto = (targetState === 'PHOTO' && data.type === 'PHOTO' && data.idx === activePhotoIdx);
 
         if (isActivePhoto) {
-            // 被选中的照片：飞到屏幕前
             tPos.set(0, 0, CONFIG.camZ - 50);
             mesh.lookAt(camera.position);
             mesh.rotation.set(0, 0, 0);
             tScale.multiplyScalar(inputState.zoomLevel);
         } else {
-            // 普通物体：
-            // 1. 应用全局公转 (Ribbon 除外，因为它在上面已经通过 rotation 处理了，且位置始终是 0,0,0)
-            if (data.type !== 'RIBBON') {
-                tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
-            }
+            // 应用全局公转
+            tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
 
-            // 2. 鼠标悬停放大照片
+            // 鼠标悬停放大照片
             if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
                 tScale.multiplyScalar(data.hoverScale);
             }
