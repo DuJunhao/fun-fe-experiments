@@ -413,12 +413,12 @@ function createChristmasObjects() {
         
         // 之前的 0xFF8800 太红了
         // 改为 0xFFE6AA (淡金色/暖白)，这样光晕就是柔和的金黄色
-        emissive: 0xFFE6AA,     
+        emissive: 0xFFCC66,
         
         // 强度保持高位，确保发光
-        emissiveIntensity: 3.5, 
+        emissiveIntensity: 1.2, 
         
-        roughness: 0.4,
+        roughness: 0.2,
         metalness: 1.0
     });
 
