@@ -144,22 +144,18 @@ function onGlobalMouseMove(event) {
 function onGlobalMouseDown(event) {
     if (event.button !== 0) return;
 
+    const bgm = document.getElementById('bgm');
+    if (bgm && bgm.paused) {
+        bgm.volume = 1.0;
+        bgm.play()
+            .then(() => console.log("✅ 选中照片，BGM 开始播放"))
+            .catch(e => console.error("❌ 播放报错:", e));
+    }
+
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
     // 只有当检测到点击了照片 (targetPhoto 存在) 时进入
     if (targetPhoto) {
-        
-        // ===========================================
-        // 【修改】只在选中照片时尝试播放音乐
-        // ===========================================
-        const bgm = document.getElementById('bgm');
-        if (bgm && bgm.paused) {
-            bgm.volume = 1.0; 
-            bgm.play()
-                .then(() => console.log("✅ 选中照片，BGM 开始播放"))
-                .catch(e => console.error("❌ 播放报错:", e));
-        }
-        // ===========================================
 
         inputState.mouseLockedPhoto = true;
         activePhotoIdx = targetPhoto.userData.idx;
@@ -218,7 +214,7 @@ function initThree() {
     window.addEventListener('wheel', onGlobalWheel);
     window.addEventListener('resize', onWindowResize);
     window.addEventListener('contextmenu', e => e.preventDefault());
-    console.log("鼠标监听器已挂载"); 
+    console.log("鼠标监听器已挂载");
     // ===========================================
 
     // 【1. 清空旧画布】
@@ -238,8 +234,8 @@ function initThree() {
     renderer = new THREE.WebGLRenderer({ antialias: true, stencil: false, depth: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.ReinhardToneMapping; 
-    renderer.toneMappingExposure = 2.0; 
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 2.0;
     container.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
@@ -252,9 +248,9 @@ function initThree() {
 
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.8; 
-    bloomPass.strength = 1.5; 
-    bloomPass.radius = 0.5; 
+    bloomPass.threshold = 0.8;
+    bloomPass.strength = 1.5;
+    bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
@@ -272,7 +268,7 @@ function initThree() {
 
 function createChristmasObjects() {
     // ==========================================================================
-    // 辅助函数：创建柔光纹理 (保持不变)
+    // 辅助函数：柔光纹理 (保持不变)
     // ==========================================================================
     function createGlowTexture() {
         const canvas = document.createElement('canvas');
@@ -289,31 +285,22 @@ function createChristmasObjects() {
         return tex;
     }
 
-    // 1. 纹理配置
-    // 【修改点 1】松树颜色大改：背景用极深的墨绿色，十字带用近乎黑色
-    const leafTex = createCrossTexture('#0B300B', '#000500'); 
-    
+    // 1. 纹理配置 (保持之前的深绿色设置)
+    const leafTex = createCrossTexture('#0B300B', '#000500');
     const giftTex = createCrossTexture('#DC143C', '#FFD700');
     const glowTex = createGlowTexture();
 
     // 2. 材质配置
     const matGlowSprite = new THREE.SpriteMaterial({
-        map: glowTex,
-        color: 0xffffff,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
+        map: glowTex, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
     });
 
-    // 这里的 Lambert 材质配合深色纹理，吸光效果更好，看起来更像树叶
     const matLeaf = new THREE.MeshLambertMaterial({ map: leafTex });
-    
     const matGift = new THREE.MeshPhysicalMaterial({ map: giftTex, roughness: 0.4, metalness: 0.3, emissive: 0x220000, emissiveIntensity: 0.2 });
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0 });
     const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
     const matWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
     const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 1.2 });
-    
     const matTopStar = new THREE.MeshPhysicalMaterial({ color: 0xFFD700, metalness: 1.0, roughness: 0.0, emissive: 0xFFEE88, emissiveIntensity: 5.0, clearcoat: 1.0 });
 
     // 3. 几何体配置
@@ -334,12 +321,10 @@ function createChristmasObjects() {
 
     const baseCount = CONFIG.particleCount - 150;
 
-    // ==========================================
-    // 4. 创建普通装饰物
-    // ==========================================
+    // 4. 创建普通装饰物 (循环保持不变)
     for (let i = 0; i < baseCount; i++) {
         let mesh;
-        const containerGroup = new THREE.Group(); 
+        const containerGroup = new THREE.Group();
         const type = Math.random();
         let isSuitableForGlow = true;
 
@@ -348,20 +333,13 @@ function createChristmasObjects() {
             mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
             mesh.scale.setScalar(0.8 + Math.random() * 0.5);
             initParticle(containerGroup, 'LEAF', i);
-            isSuitableForGlow = false; // 树叶不发光
+            isSuitableForGlow = false;
         } else {
-            if (type < 0.70) {
-                mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
-            } else if (type < 0.80) {
-                mesh = new THREE.Mesh(giftGeo, matGift);
-                mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-            } else if (type < 0.88) {
-                mesh = new THREE.Mesh(candyGeo, matCandy);
-                mesh.rotation.set((Math.random() - 0.5), (Math.random() - 0.5), Math.random() * Math.PI);
-            } else if (type < 0.93) {
-                mesh = new THREE.Mesh(starGeo, matGold);
-                mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-            } else if (type < 0.97) {
+            if (type < 0.70) mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
+            else if (type < 0.80) { mesh = new THREE.Mesh(giftGeo, matGift); mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI); }
+            else if (type < 0.88) { mesh = new THREE.Mesh(candyGeo, matCandy); mesh.rotation.set((Math.random() - 0.5), (Math.random() - 0.5), Math.random() * Math.PI); }
+            else if (type < 0.93) { mesh = new THREE.Mesh(starGeo, matGold); mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0); }
+            else if (type < 0.97) {
                 const group = new THREE.Group();
                 const cone = new THREE.Mesh(hatConeGeo, matRedShiny);
                 const brim = new THREE.Mesh(hatBrimGeo, matWhite);
@@ -378,7 +356,7 @@ function createChristmasObjects() {
                 group.add(leg); group.add(foot); group.add(cuff);
                 mesh = group;
             }
-            
+
             const scaleVar = 0.8 + Math.random() * 0.4;
             if (!mesh.isGroup) mesh.scale.setScalar(scaleVar);
             initParticle(containerGroup, 'DECOR', i);
@@ -393,16 +371,16 @@ function createChristmasObjects() {
             glowSprite.position.set(0, 0, 0.1);
             containerGroup.add(glowSprite);
         }
-        
+
         scene.add(containerGroup);
         particles.push(containerGroup);
     }
 
     // ==========================================
-    // 5. 灯带 (Light Ribbon)
+    // 5. 灯带 (Light Ribbon) - 【核心修改区域】
     // ==========================================
     const ribbonPoints = [];
-    const ribbonSegments = 300;
+    const ribbonSegments = 400; // 增加分段让细线更圆滑
     const ribbonTurns = 7;
     const bottomRadius = 55;
     const topRadius = 1;
@@ -417,12 +395,18 @@ function createChristmasObjects() {
         ribbonPoints.push(new THREE.Vector3(x, y, z));
     }
     const spiralPath = new THREE.CatmullRomCurve3(ribbonPoints);
-    const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 8, false);
 
-    const matGlowingRibbon = new THREE.MeshBasicMaterial({
-        // 【修改点 2】颜色调暗为深橙色/金色，避免光晕太强
-        color: 0xFFA500, 
-        side: THREE.DoubleSide
+    // 【修改 1】：半径改细！从 1.2 改为 0.3
+    const tubeGeo = new THREE.TubeGeometry(spiralPath, 800, 0.3, 8, false);
+
+    // 【修改 2】：使用 Standard 材质 + 自发光(Emissive)
+    // 这样可以通过 emissiveIntensity 强制让暗色也发光
+    const matGlowingRibbon = new THREE.MeshStandardMaterial({
+        color: 0x000000,        // 基础色设为黑，全靠发光
+        emissive: 0xFF8800,     // 发光色：深金橙色 (不会像浅黄那么刺眼)
+        emissiveIntensity: 4.0, // 【关键】强度设高，强制触发 Bloom 光晕
+        roughness: 0.4,
+        metalness: 1.0
     });
 
     const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
@@ -446,12 +430,12 @@ function createChristmasObjects() {
     topStarGroup.add(topStarMesh);
 
     const topGlowSprite = new THREE.Sprite(matGlowSprite);
-    topGlowSprite.scale.set(12, 12, 1.0); 
+    topGlowSprite.scale.set(12, 12, 1.0);
     topStarGroup.add(topGlowSprite);
 
     initParticle(topStarGroup, 'TOP_STAR', 20000);
     topStarGroup.userData.treePos.set(0, CONFIG.treeHeight / 2 + 2, 0);
-    topStarGroup.userData.rotSpeed = { x: 0, y: 0.02, z: 0 }; 
+    topStarGroup.userData.rotSpeed = { x: 0, y: 0.02, z: 0 };
     scene.add(topStarGroup);
     particles.push(topStarGroup);
 
@@ -500,7 +484,7 @@ function createChristmasObjects() {
             fallSpeed: 0.1 + Math.random() * 0.2,
             driftSpeed: (Math.random() - 0.5) * 0.15,
             randomPhase: Math.random() * Math.PI * 2,
-            baseScale: new THREE.Vector3(1, 1, 1) 
+            baseScale: new THREE.Vector3(1, 1, 1)
         };
 
         scene.add(snowMesh);
@@ -671,7 +655,7 @@ function updateLogic() {
             // 始终自转 (绕Y轴)
             mesh.rotation.y += 0.02;
             // 稍微带点X轴倾角，让星星看起来更有立体感，不至于是一条线
-            mesh.rotation.x = 0.1; 
+            mesh.rotation.x = 0.1;
 
             if (targetState === 'TREE') {
                 // 树模式：飞回树顶
@@ -681,7 +665,7 @@ function updateLogic() {
                 // 爆炸/照片模式：强制居中
                 tPos.set(0, 0, 0);
                 // 可以稍微放大一点，让它像个核心
-                tScale.set(1.5, 1.5, 1.5); 
+                tScale.set(1.5, 1.5, 1.5);
             }
 
             // 平滑插值
@@ -856,24 +840,25 @@ async function initMediaPipeSafe() {
                 inputState.isFist = isFistDetected;
                 inputState.isPinch = isPinchDetected;
 
+                // ===========================================
+                // 【新增】只要检测到任何手势(握拳或捏合)，就尝试播放音乐
+                // ===========================================
+                if (isPinchDetected || isFistDetected) {
+                    const bgm = document.getElementById('bgm');
+                    if (bgm && bgm.paused) {
+                        bgm.volume = 1.0;
+                        // 注意：如果用户从未点击过页面，纯手势可能会被浏览器拦截自动播放
+                        // 但只要点过一次允许摄像头，通常就可以了
+                        bgm.play().catch(e => {}); 
+                    }
+                }
+            
                 // ================= 4. 执行业务逻辑 =================
                 if (inputState.isPinch) {
                     const now = Date.now();
 
                     // 触发解锁 (0.5秒冷却)
                     if (activePhotoIdx === -1 && now - inputState.lastPinchTime > 500) {
-
-                        // ===========================================
-                        // 【新增】手势解锁照片时，播放音乐！
-                        // ===========================================
-                        const bgm = document.getElementById('bgm');
-                        if (bgm && bgm.paused) {
-                            bgm.volume = 0.5;
-                            // 注意：有些浏览器可能因为没有“点击”操作而拦截自动播放
-                            // 但通常用户已经点击过“允许摄像头”按钮，这算作一次交互，所以应该能响
-                            bgm.play().catch(e => console.log("手势播放被拦截:", e));
-                        }
-                        // ===========================================
 
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
                         inputState.lastPinchTime = now;
