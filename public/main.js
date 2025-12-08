@@ -374,13 +374,9 @@ function createChristmasObjects() {
     const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 12, false);
 
     // --- C. 创建发光材质 ---
-    const matGlowingRibbon = new THREE.MeshStandardMaterial({
-        color: 0xFFD700,        // 基础金色
-        emissive: 0xFFD700,     // 自发光颜色（关键！）
-        emissiveIntensity: 3.0, // 发光强度，大于 1.0 才能产生强烈的辉光
-        roughness: 0.3,
-        metalness: 0.7,
-        side: THREE.DoubleSide  // 双面渲染，确保任何角度看都没问题
+    const matGlowingRibbon = new THREE.MeshBasicMaterial({
+        color: 0xFFD700,
+        side: THREE.DoubleSide
     });
 
     // --- D. 创建单一网格并加入系统 ---
