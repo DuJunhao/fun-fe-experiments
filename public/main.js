@@ -286,7 +286,7 @@ function createChristmasObjects() {
     // ==========================================
 
     const lightBulbGeo = new THREE.SphereGeometry(0.6, 8, 8);
-    
+
     // 1. 普通装饰
     for (let i = 0; i < baseCount; i++) {
         let mesh;
@@ -376,16 +376,17 @@ function createChristmasObjects() {
     // --- D. 创建单一网格并加入系统 ---
     // 现在整个光带是一个单独的 Mesh
     const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
+    
+    // 【新增】防止摄像机角度特殊时光带被误判为看不见而消失
+    ribbonMesh.frustumCulled = false; 
 
-    // 设置初始状态和爆炸位置
-    // 注意：treePos 设置为 (0,0,0)，因为几何体本身已经包含了形状
     ribbonMesh.userData = {
         type: 'RIBBON',
         treePos: new THREE.Vector3(0, 0, 0),
-        // 爆炸时让整个带子飞到高空去
         explodePos: new THREE.Vector3(0, CONFIG.treeHeight + 150, 0),
         baseScale: new THREE.Vector3(1, 1, 1),
-        rotSpeed: { x: 0.005, y: 0.005, z: 0 } // 给一个缓慢的自转，让光泽流动
+        // 【建议】把这里的 rotSpeed 改为全 0，因为我们会手动控制旋转
+        rotSpeed: { x: 0, y: 0, z: 0 } 
     };
 
     scene.add(ribbonMesh);
@@ -551,95 +552,80 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
 
-    // 1. 【修改点】降低公转速度 (0.0005 比之前的 0.0025 慢很多)
-    // 并且我们不再旋转整个 scene，而是累加这个角度，手动算粒子位置
+    // 1. 全局旋转计算
     globalRot -= 0.0005;
 
-    // 2. 鼠标上下移动控制俯仰角 (X轴) 依然保留作用于 scene
+    // 2. 鼠标上下控制场景俯仰 (X轴)
     const targetRotX = (inputState.y - 0.5) * 0.5;
     scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
-
-    // 确保 scene.rotation.y 归零，因为我们改为手动旋转粒子了
-    scene.rotation.y = 0;
+    scene.rotation.y = 0; // 确保场景不自转，依靠粒子位置旋转
 
     particles.forEach(mesh => {
         const data = mesh.userData;
         let tPos = new THREE.Vector3();
-        let tScale = data.baseScale.clone(); // 获取基础缩放
+        let tScale = data.baseScale.clone();
 
-        // 粒子自转 (原有逻辑)
+        // 默认自转 (仅对非光带物体有效，后面会覆盖光带的旋转)
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
-        // --- A. 计算“基准位置” ---
+        // --- A. 计算目标位置和基础缩放 ---
         if (targetState === 'TREE') {
             tPos.copy(data.treePos);
 
-            // 如果是光带，不需要上下浮动，也不需要自转，需要保持连贯
             if (data.type === 'RIBBON') {
-                // 恢复到初始计算的旋转角度，保证光带平滑
-                if (targetState === 'TREE') {
-                    // 在树形态下，保持原大
-                    tScale.set(1, 1, 1);
-                } else {
-                    // 在分散(EXPLODE) 或 照片(PHOTO) 模式下，直接隐藏
-                    tScale.set(0, 0, 0);
-                }
+                // 【关键修复】: 强制设定光带在树形态下的状态
+                // 1. 缩放设为 1
+                tScale.set(1, 1, 1);
+                // 2. 【核心】强制让光带跟着 globalRot 同步旋转 (Y轴)，且不发生倾斜 (X/Z归零)
+                mesh.rotation.set(0, globalRot, 0); 
             } else {
-                // 其他装饰物保持原有浮动效果
+                // 其他物体添加呼吸浮动效果
                 tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0;
+                if (data.type === 'PHOTO') tScale.multiplyScalar(0.6);
             }
 
-            if (data.type === 'PHOTO') tScale.multiplyScalar(0.6);
-        }
-        else if (targetState === 'EXPLODE') {
-            // ... (原有逻辑) ...
+        } else if (targetState === 'EXPLODE') {
             tPos.copy(data.explodePos);
             tPos.x += Math.sin(time * 0.5 + data.randomPhase) * 2;
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
-        }
-        else if (targetState === 'PHOTO') {
-            // ... (原有逻辑) ...
+            
+            // 爆炸模式下隐藏光带
+            if (data.type === 'RIBBON') tScale.set(0, 0, 0);
+
+        } else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                // ...
+                // 选中照片的逻辑在下面单独处理
             } else {
                 tPos.copy(data.explodePos).multiplyScalar(2.0);
             }
+            // 照片模式下隐藏光带
+            if (data.type === 'RIBBON') tScale.set(0, 0, 0);
         }
 
-        // ==========================================
-        // 新增修改：控制光带的显隐
-        // ==========================================
-        if (data.type === 'RIBBON') {
-            if (targetState === 'TREE') {
-                // 在树形态下，保持原大
-                tScale.set(1, 1, 1);
-            } else {
-                // 在分散(EXPLODE) 或 照片(PHOTO) 模式下，直接隐藏
-                tScale.set(0, 0, 0);
-            }
-        }
-        // ==========================================
-
-        // ... (后续原有的 B. 应用公转 & lerp 逻辑保持不变) ...
-
+        // --- B. 应用位置变换 ---
         const isActivePhoto = (targetState === 'PHOTO' && data.type === 'PHOTO' && data.idx === activePhotoIdx);
 
         if (isActivePhoto) {
-            // ... (原有逻辑) ...
+            // 被选中的照片：飞到屏幕前
             tPos.set(0, 0, CONFIG.camZ - 50);
             mesh.lookAt(camera.position);
             mesh.rotation.set(0, 0, 0);
             tScale.multiplyScalar(inputState.zoomLevel);
         } else {
-            // ... (原有逻辑) ...
-            tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
+            // 普通物体：
+            // 1. 应用全局公转 (Ribbon 除外，因为它在上面已经通过 rotation 处理了，且位置始终是 0,0,0)
+            if (data.type !== 'RIBBON') {
+                tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
+            }
 
+            // 2. 鼠标悬停放大照片
             if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
                 tScale.multiplyScalar(data.hoverScale);
             }
         }
 
+        // --- C. 平滑插值 ---
         mesh.position.lerp(tPos, 0.08);
         mesh.scale.lerp(tScale, 0.08);
     });
