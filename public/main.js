@@ -39,15 +39,20 @@ const raycaster = new THREE.Raycaster();
 const mouseVector = new THREE.Vector2();
 
 // ================= 全局变量 =================
-// ... (其他变量保持不变)
 
+// 【修改点】在这里增加了 smoothX, smoothY, smoothPinch 用于防抖
 const inputState = {
     x: 0.5, y: 0.5,
     isFist: false,
     mouseLockedPhoto: false,
     isPinch: false,
     zoomLevel: 3.5,
-    lastPinchTime: 0  // 【必须添加】: 否则捏合时间计算会出错
+    lastPinchTime: 0,
+    
+    // 新增：平滑缓冲变量 (默认值)
+    smoothX: 0.5,
+    smoothY: 0.5,
+    smoothPinch: 0.0
 };
 
 const textureLoader = new THREE.TextureLoader();
@@ -683,64 +688,66 @@ async function initMediaPipeSafe() {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
 
-                // ================= 1. 平滑处理坐标 (消除移动抖动) =================
-                // 目标值 (Target)
-                const targetX = 1.0 - lm[9].x;
-                const targetY = lm[9].y;
-
-                // 平滑公式 (Lerp): 0.15 代表每一帧只移动 15% 的距离，大幅过滤抖动
-                smoothState.x += (targetX - smoothState.x) * 0.15;
-                smoothState.y += (targetY - smoothState.y) * 0.15;
-
-                // 赋值给全局输入状态
-                if (activePhotoIdx === -1) {
-                    inputState.x = smoothState.x;
-                    inputState.y = smoothState.y;
-                }
-
-                // ================= 2. 握拳检测 (保持之前的逻辑) =================
+                // ================= 1. 计算握拳 (Fist) - 优先计算 =================
+                // 计算 食指(8)、中指(12)、无名指(16)、小指(20) 到手腕(0) 的距离
                 const fingerTips = [8, 12, 16, 20];
                 let totalDist = 0;
                 fingerTips.forEach(i => {
                     totalDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y);
                 });
-                const isFistDetected = (totalDist / 4) < 0.22;
+                
+                // 【优化】：稍微放宽阈值到 0.25 (原本是 0.22)，让握拳更容易触发
+                const isFistDetected = (totalDist / 4) < 0.25;
+
+                // ================= 2. 平滑处理坐标 (消除移动抖动) =================
+                // 只有在【没握拳】且【没锁定照片】时才更新位置
+                if (activePhotoIdx === -1) {
+                    const targetX = 1.0 - lm[9].x;
+                    const targetY = lm[9].y;
+
+                    // 平滑公式 (Lerp): 0.15 系数
+                    inputState.smoothX += (targetX - inputState.smoothX) * 0.15;
+                    inputState.smoothY += (targetY - inputState.smoothY) * 0.15;
+
+                    inputState.x = inputState.smoothX;
+                    inputState.y = inputState.smoothY;
+                }
 
                 // ================= 3. 平滑处理捏合 (消除缩放颤抖) =================
-                // 目标捏合距离
+                // 原始捏合距离
                 const rawPinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+                
+                // 平滑距离
+                inputState.smoothPinch += (rawPinchDist - inputState.smoothPinch) * 0.15;
 
-                // 【关键修复】对距离也进行平滑处理
-                // 如果变化很小，甚至可以忽略（死区），这里直接用平滑
-                smoothState.pinchDist += (rawPinchDist - smoothState.pinchDist) * 0.15;
-
-                // 辅助判断：中指伸直
+                // 辅助判断：中指伸直 (防止握拳被识别为捏合)
                 const middleFingerDist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
-                const isMiddleFingerExtended = middleFingerDist > 0.25;
+                const isMiddleFingerExtended = middleFingerDist > 0.25; 
 
-                // 判定逻辑：使用“平滑后”的距离来计算是否捏合
-                const isPinchDetected = (smoothState.pinchDist < 0.08) && !isFistDetected && isMiddleFingerExtended;
+                // 判定是否捏合：(距离够近) && (不是握拳) && (中指是直的)
+                // 【关键】使用平滑后的 smoothPinch 判定，防止边界跳动
+                const isPinchDetected = (inputState.smoothPinch < 0.08) && !isFistDetected && isMiddleFingerExtended;
 
+                // ================= 4. 更新全局状态 =================
                 inputState.isFist = isFistDetected;
                 inputState.isPinch = isPinchDetected;
 
-                // ================= 4. 状态响应 =================
+                // ================= 5. 执行逻辑 =================
                 if (inputState.isPinch) {
                     const now = Date.now();
+                    // 解锁照片逻辑
                     if (activePhotoIdx === -1 && now - inputState.lastPinchTime > 500) {
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
                         inputState.lastPinchTime = now;
                         inputState.zoomLevel = 2.2;
                         updateStatusText("MEMORY UNLOCKED", "#00ffff");
                     }
-
-                    // 【关键】使用平滑后的 smoothState.pinchDist 参与计算
-                    // 这样算出来的 scale 就不会乱跳了
-                    let scale = (smoothState.pinchDist - 0.02) * 60.0;
-
-                    // 限制最大最小缩放
+                    
+                    // 缩放逻辑：使用平滑值
+                    let scale = (inputState.smoothPinch - 0.02) * 60.0;
                     inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
                 } else {
+                    // 如果松开手，且当前锁定了照片，则退出照片模式
                     if (activePhotoIdx !== -1) {
                         activePhotoIdx = -1;
                         updateStatusText("GALAXY MODE");
