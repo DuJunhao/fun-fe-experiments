@@ -144,33 +144,23 @@ function onGlobalMouseMove(event) {
 function onGlobalMouseDown(event) {
     if (event.button !== 0) return;
 
-    const bgm = document.getElementById('bgm');
-    
-    // ===========================================
-    // 【调试代码】看看音频到底出了什么问题
-    // ===========================================
-    if (bgm) {
-        console.log("-------------------------------");
-        console.log("尝试播放音乐...");
-        console.log("音频文件地址:", bgm.currentSrc); // 检查这里打印出来的地址是否正确！
-        console.log("音频就绪状态 (readyState):", bgm.readyState); // 0=没数据, 4=可以播放
-        console.log("音量:", bgm.volume);
-        console.log("是否暂停:", bgm.paused);
-
-        if (bgm.paused) {
-            bgm.volume = 1.0; // 先拉满音量测试
-            bgm.play()
-                .then(() => console.log("✅ 播放指令成功 (如果不响，请检查电脑音响或文件是否损坏)"))
-                .catch(e => console.error("❌ 播放报错:", e));
-        } else {
-            console.log("⚠️ 音乐已经在播放中了");
-        }
-    }
-
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
+    // 只有当检测到点击了照片 (targetPhoto 存在) 时进入
     if (targetPhoto) {
-       
+        
+        // ===========================================
+        // 【修改】只在选中照片时尝试播放音乐
+        // ===========================================
+        const bgm = document.getElementById('bgm');
+        if (bgm && bgm.paused) {
+            bgm.volume = 1.0; 
+            bgm.play()
+                .then(() => console.log("✅ 选中照片，BGM 开始播放"))
+                .catch(e => console.error("❌ 播放报错:", e));
+        }
+        // ===========================================
+
         inputState.mouseLockedPhoto = true;
         activePhotoIdx = targetPhoto.userData.idx;
         inputState.isFist = false;
@@ -180,6 +170,7 @@ function onGlobalMouseDown(event) {
 
         updateStatusText("MEMORY LOCKED", "#00ffff");
     } else {
+        // 如果点击的是空白处
         if (inputState.mouseLockedPhoto) {
             inputState.mouseLockedPhoto = false;
             activePhotoIdx = -1;
