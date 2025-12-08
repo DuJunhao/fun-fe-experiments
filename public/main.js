@@ -249,7 +249,7 @@ function initThree() {
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
     bloomPass.threshold = 0.25;
-    bloomPass.strength = 0.6;
+    bloomPass.strength = 1.0;
     bloomPass.radius = 0.7;
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
@@ -407,19 +407,20 @@ function createChristmasObjects() {
     // 保持细线 (0.3)
     const tubeGeo = new THREE.TubeGeometry(spiralPath, 800, 0.3, 8, false);
 
-    // 【核心修改】：材质颜色改为 香槟金/暖白
     const matGlowingRibbon = new THREE.MeshStandardMaterial({
-        color: 0x000000,        // 基础色黑
+        color: 0x000000,    // 基础色黑色，全靠自发光
         
-        // 之前的 0xFF8800 太红了
-        // 改为 0xFFE6AA (淡金色/暖白)，这样光晕就是柔和的金黄色
-        emissive: 0xFFCC66,
+        // 【改色】使用极亮的暖白/香槟金。
+        // 0xFFF0C0 比之前的颜色更亮、白分量更多，能造出核心发白的效果。
+        emissive: 0xFFF0C0, 
         
-        // 强度保持高位，确保发光
-        emissiveIntensity: 1.2, 
+        // 【改强度】大幅提高强度！
+        // 高强度会让材质核心过曝变白，同时触发强烈的 Bloom 光晕。
+        // 配合刚才调整的 Bloom 参数，就能得到明亮核心+柔和光晕的效果。
+        emissiveIntensity: 3.5, 
         
-        roughness: 0.2,
-        metalness: 1.0
+        roughness: 0.1,     // 让表面更光滑一点
+        metalness: 1.0      // 保持金属感
     });
 
     const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
