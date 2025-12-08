@@ -223,9 +223,9 @@ function initThree() {
 
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.7; // 【关键】建议调低！越低越容易发光 (0 = 全发光, 1 = 只有极亮才发光)
-    bloomPass.strength = 2.5;  // 【关键】建议调高！光晕的强度 (建议 1.5 ~ 3.0)
-    bloomPass.radius = 0.8;    // 光晕扩散的范围 (0 ~ 1)
+    bloomPass.threshold = 0.8; // 【关键】建议调低！越低越容易发光 (0 = 全发光, 1 = 只有极亮才发光)
+    bloomPass.strength = 1.5;  // 【关键】建议调高！光晕的强度 (建议 1.5 ~ 3.0)
+    bloomPass.radius = 0.5;    // 光晕扩散的范围 (0 ~ 1)
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
@@ -457,16 +457,16 @@ function createChristmasObjects() {
 
         snowMesh.userData = {
             type: 'SNOW',
-            fallSpeed: 0.5 + Math.random() * 0.8,    // 下落速度
-            driftSpeed: (Math.random() - 0.5) * 0.2, // 左右飘动速度
-            randomPhase: Math.random() * Math.PI * 2,// 随机相位
-            
-            // 【关键修复】必须加上这一行，否则 updateLogic 会报错！
-            baseScale: new THREE.Vector3(1, 1, 1) 
+            // 【修改点 3】大幅降低下落速度 (0.1 ~ 0.3)
+            fallSpeed: 0.1 + Math.random() * 0.2,
+            // 左右飘动速度也可以稍微减小一点点
+            driftSpeed: (Math.random() - 0.5) * 0.15,
+            randomPhase: Math.random() * Math.PI * 2,
+            baseScale: new THREE.Vector3(1, 1, 1)
         };
 
         scene.add(snowMesh);
-        particles.push(snowMesh); 
+        particles.push(snowMesh);
     }
 } // <--- createChristmasObjects 结束的大括号
 
@@ -597,7 +597,7 @@ function updateLogic() {
     scene.rotation.y = 0;
 
     particles.forEach(mesh => {
-       const data = mesh.userData;
+        const data = mesh.userData;
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
 
