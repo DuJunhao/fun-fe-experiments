@@ -434,6 +434,35 @@ function createChristmasObjects() {
         particles.push(group);
         photos.push(group);
     });
+
+    // ================= [代码块 1] 下雪特效初始化 =================
+    const snowGeo = new THREE.CircleGeometry(0.4, 6); 
+    const snowMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.8,
+        depthWrite: false
+    });
+
+    for (let i = 0; i < 300; i++) {
+        const snowMesh = new THREE.Mesh(snowGeo, snowMat);
+        
+        // 随机散布在空中
+        const x = (Math.random() - 0.5) * 300;
+        const y = Math.random() * 200 + 50;
+        const z = (Math.random() - 0.5) * 300;
+
+        snowMesh.position.set(x, y, z);
+        
+        snowMesh.userData = {
+            type: 'SNOW',
+            fallSpeed: 0.5 + Math.random() * 0.8,    // 下落速度
+            driftSpeed: (Math.random() - 0.5) * 0.2, // 左右飘动速度
+            randomPhase: Math.random() * Math.PI * 2 // 随机相位
+        };
+
+        scene.add(snowMesh);
+        particles.push(snowMesh); // 必须加入 particles 数组
 }
 
 function initParticle(mesh, type, idx) {
@@ -563,9 +592,33 @@ function updateLogic() {
     scene.rotation.y = 0;
 
     particles.forEach(mesh => {
-        const data = mesh.userData;
+       const data = mesh.userData;
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
+
+        // ================= 修改开始：添加雪花运动逻辑 =================
+        if (data.type === 'SNOW') {
+            // 1. 向下移动
+            mesh.position.y -= data.fallSpeed;
+            
+            // 2. 水平方向轻微摆动（模拟风吹）
+            mesh.position.x += Math.sin(time + data.randomPhase) * data.driftSpeed;
+            // 确保雪花始终面向摄像机（对于 2D CircleGeometry 很有必要）
+            mesh.lookAt(camera.position);
+
+            // 3. 循环机制：如果掉到屏幕下方，就回到顶部
+            // 这里的 -150 是一个大概的底部边界值
+            if (mesh.position.y < -150) {
+                mesh.position.y = 200; // 回到顶部
+                // 重新随机水平位置，避免重复感
+                mesh.position.x = (Math.random() - 0.5) * 300;
+                mesh.position.z = (Math.random() - 0.5) * 300;
+            }
+
+            // 雪花不需要插值，直接应用位置即可
+            // 直接 return，不执行后面的通用逻辑
+            return; 
+        }
 
         // ===========================================
         // 特殊处理：灯带 (RIBBON)
@@ -657,7 +710,7 @@ function onWindowResize() {
     composer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ================= 5. MediaPipe =================
+
 // ================= 5. MediaPipe (增强版) =================
 async function initMediaPipeSafe() {
     const video = document.getElementById('input_video');
