@@ -274,9 +274,10 @@ function createChristmasObjects() {
         const canvas = document.createElement('canvas');
         canvas.width = 64; canvas.height = 64;
         const ctx = canvas.getContext('2d');
+        // 稍微调整一下光晕颜色，让它暖一点，适合整体氛围
         const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-        gradient.addColorStop(0, 'rgba(255, 255, 240, 1)');
-        gradient.addColorStop(0.4, 'rgba(255, 220, 180, 0.6)');
+        gradient.addColorStop(0, 'rgba(255, 245, 220, 1)');   // 中心更暖白
+        gradient.addColorStop(0.4, 'rgba(255, 220, 180, 0.5)'); // 中间暖黄
         gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 64, 64);
@@ -285,25 +286,27 @@ function createChristmasObjects() {
         return tex;
     }
 
-    // 1. 纹理配置 (保持之前的深绿色设置)
-    const leafTex = createCrossTexture('#0B300B', '#000500');
+    // 1. 纹理配置 (保持不变)
+    const leafTex = createCrossTexture('#0B300B', '#000500'); 
     const giftTex = createCrossTexture('#DC143C', '#FFD700');
     const glowTex = createGlowTexture();
 
-    // 2. 材质配置
+    // 2. 材质配置 (保持不变)
     const matGlowSprite = new THREE.SpriteMaterial({
         map: glowTex, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
     });
 
+    // 这里的 Lambert 材质配合深色纹理，吸光效果更好，看起来更像树叶
     const matLeaf = new THREE.MeshLambertMaterial({ map: leafTex });
+    
     const matGift = new THREE.MeshPhysicalMaterial({ map: giftTex, roughness: 0.4, metalness: 0.3, emissive: 0x220000, emissiveIntensity: 0.2 });
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0 });
     const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
     const matWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
     const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 1.2 });
-    const matTopStar = new THREE.MeshPhysicalMaterial({ color: 0xFFD700, metalness: 1.0, roughness: 0.0, emissive: 0xFFEE88, emissiveIntensity: 5.0, clearcoat: 1.0 });
+    const matTopStar = new THREE.MeshPhysicalMaterial({ color: 0xFFD700, metalness: 1.0, roughness: 0.0, emissive: 0xFFEE88, emissiveIntensity: 3.5, clearcoat: 1.0 });
 
-    // 3. 几何体配置
+    // 3. 几何体配置 (保持不变)
     const leafGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
     const sphereGeo = new THREE.SphereGeometry(1.2, 16, 16);
     const giftGeo = new THREE.BoxGeometry(2.0, 2.0, 2.0);
@@ -321,25 +324,43 @@ function createChristmasObjects() {
 
     const baseCount = CONFIG.particleCount - 150;
 
-    // 4. 创建普通装饰物 (循环保持不变)
+    // ==========================================
+    // 4. 创建普通装饰物 (循环)
+    // ==========================================
     for (let i = 0; i < baseCount; i++) {
         let mesh;
-        const containerGroup = new THREE.Group();
+        const containerGroup = new THREE.Group(); 
         const type = Math.random();
-        let isSuitableForGlow = true;
+        
+        // 默认所有物体都适合添加柔光，不需要再单独设置 false 了
+        let isSuitableForGlow = true; 
 
         if (type < 0.60) {
+            // 创建绿色树叶盒子
             mesh = new THREE.Mesh(leafGeo, matLeaf);
             mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
             mesh.scale.setScalar(0.8 + Math.random() * 0.5);
             initParticle(containerGroup, 'LEAF', i);
-            isSuitableForGlow = false;
+            
+            // 【关键修改】这里注释掉了！
+            // 之前是：isSuitableForGlow = false; (树叶不发光)
+            // 现在注释掉它，让它保持为 true，这样绿色盒子也会加上柔光精灵了。
+            // isSuitableForGlow = false; 
+
         } else {
-            if (type < 0.70) mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
-            else if (type < 0.80) { mesh = new THREE.Mesh(giftGeo, matGift); mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI); }
-            else if (type < 0.88) { mesh = new THREE.Mesh(candyGeo, matCandy); mesh.rotation.set((Math.random() - 0.5), (Math.random() - 0.5), Math.random() * Math.PI); }
-            else if (type < 0.93) { mesh = new THREE.Mesh(starGeo, matGold); mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0); }
-            else if (type < 0.97) {
+            // 创建其他装饰物
+            if (type < 0.70) {
+                mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
+            } else if (type < 0.80) {
+                mesh = new THREE.Mesh(giftGeo, matGift);
+                mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            } else if (type < 0.88) {
+                mesh = new THREE.Mesh(candyGeo, matCandy);
+                mesh.rotation.set((Math.random() - 0.5), (Math.random() - 0.5), Math.random() * Math.PI);
+            } else if (type < 0.93) {
+                mesh = new THREE.Mesh(starGeo, matGold);
+                mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+            } else if (type < 0.97) {
                 const group = new THREE.Group();
                 const cone = new THREE.Mesh(hatConeGeo, matRedShiny);
                 const brim = new THREE.Mesh(hatBrimGeo, matWhite);
@@ -356,7 +377,7 @@ function createChristmasObjects() {
                 group.add(leg); group.add(foot); group.add(cuff);
                 mesh = group;
             }
-
+            
             const scaleVar = 0.8 + Math.random() * 0.4;
             if (!mesh.isGroup) mesh.scale.setScalar(scaleVar);
             initParticle(containerGroup, 'DECOR', i);
@@ -364,63 +385,50 @@ function createChristmasObjects() {
 
         containerGroup.add(mesh);
 
+        // 因为现在 isSuitableForGlow 恒为 true，所有物体都会执行这段代码
         if (isSuitableForGlow) {
             const glowSprite = new THREE.Sprite(matGlowSprite);
-            const glowSize = 3.5 + Math.random() * 1.0;
+            // 让柔光大小随机一点，看起来更自然
+            const glowSize = 3.0 + Math.random() * 1.5;
             glowSprite.scale.set(glowSize, glowSize, 1.0);
             glowSprite.position.set(0, 0, 0.1);
             containerGroup.add(glowSprite);
         }
-
+        
         scene.add(containerGroup);
         particles.push(containerGroup);
     }
 
     // ==========================================
-    // 5. 灯带 (Light Ribbon) - 【核心修改区域】
+    // 5. 灯带 (保持你满意的香槟金效果)
     // ==========================================
     const ribbonPoints = [];
     const ribbonSegments = 500; 
-    const ribbonTurns = 8.5;      // 圈数保持 9，缠绕紧密
-    
-    // 底部参数保持优化后的数值
+    const ribbonTurns = 8.5;      
     const bottomRadius = 45;    
     const topRadius = 0.5;      
-
     const yStart = -40; 
     const yEnd = 45;
 
     for (let i = 0; i <= ribbonSegments; i++) {
         const progress = i / ribbonSegments;
         const angle = progress * Math.PI * 2 * ribbonTurns;
-        
         const y = THREE.MathUtils.lerp(yStart, yEnd, progress);
         const radius = THREE.MathUtils.lerp(bottomRadius, topRadius, progress);
-        
         const x = Math.cos(angle) * radius;
         const z = Math.sin(angle) * radius;
         ribbonPoints.push(new THREE.Vector3(x, y, z));
     }
     
     const spiralPath = new THREE.CatmullRomCurve3(ribbonPoints);
-    
-    // 保持细线 (0.3)
-    const tubeGeo = new THREE.TubeGeometry(spiralPath, 800, 0.3, 8, false);
+    const tubeGeo = new THREE.TubeGeometry(spiralPath, 800, 0.2, 8, false);
 
     const matGlowingRibbon = new THREE.MeshStandardMaterial({
-        color: 0x000000,    // 基础色黑色，全靠自发光
-        
-        // 【改色】使用极亮的暖白/香槟金。
-        // 0xFFF0C0 比之前的颜色更亮、白分量更多，能造出核心发白的效果。
-        emissive: 0xFFF0C0, 
-        
-        // 【改强度】大幅提高强度！
-        // 高强度会让材质核心过曝变白，同时触发强烈的 Bloom 光晕。
-        // 配合刚才调整的 Bloom 参数，就能得到明亮核心+柔和光晕的效果。
+        color: 0x000000,    
+        emissive: 0xFFF0C0, // 香槟金
         emissiveIntensity: 3.5, 
-        
-        roughness: 0.1,     // 让表面更光滑一点
-        metalness: 1.0      // 保持金属感
+        roughness: 0.1,
+        metalness: 1.0
     });
 
     const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
@@ -437,24 +445,24 @@ function createChristmasObjects() {
     particles.push(ribbonMesh);
 
     // ==========================================
-    // 6. 树顶星星
+    // 6. 树顶星星 (保持发光)
     // ==========================================
     const topStarGroup = new THREE.Group();
     const topStarMesh = new THREE.Mesh(topStarGeo, matTopStar);
     topStarGroup.add(topStarMesh);
 
     const topGlowSprite = new THREE.Sprite(matGlowSprite);
-    topGlowSprite.scale.set(12, 12, 1.0);
+    topGlowSprite.scale.set(12, 12, 1.0); 
     topStarGroup.add(topGlowSprite);
 
     initParticle(topStarGroup, 'TOP_STAR', 20000);
     topStarGroup.userData.treePos.set(0, CONFIG.treeHeight / 2 + 2, 0);
-    topStarGroup.userData.rotSpeed = { x: 0, y: 0.02, z: 0 };
+    topStarGroup.userData.rotSpeed = { x: 0, y: 0.02, z: 0 }; 
     scene.add(topStarGroup);
     particles.push(topStarGroup);
 
     // ==========================================
-    // 7. 照片卡片
+    // 7. 照片卡片 (保持不变)
     // ==========================================
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.2);
@@ -481,7 +489,7 @@ function createChristmasObjects() {
     });
 
     // ==========================================
-    // 8. 下雪特效
+    // 8. 下雪特效 (保持不变)
     // ==========================================
     const snowGeo = new THREE.CircleGeometry(0.4, 6);
     const snowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false });
@@ -498,7 +506,7 @@ function createChristmasObjects() {
             fallSpeed: 0.1 + Math.random() * 0.2,
             driftSpeed: (Math.random() - 0.5) * 0.15,
             randomPhase: Math.random() * Math.PI * 2,
-            baseScale: new THREE.Vector3(1, 1, 1)
+            baseScale: new THREE.Vector3(1, 1, 1) 
         };
 
         scene.add(snowMesh);
