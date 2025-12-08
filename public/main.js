@@ -140,7 +140,10 @@ function onGlobalMouseDown(event) {
         inputState.mouseLockedPhoto = true;
         activePhotoIdx = targetPhoto.userData.idx;
         inputState.isFist = false; 
-        inputState.zoomLevel = 4.0; 
+        
+        // 【修改这里】之前是 4.0 太大了，改回 2.2 左右比较合适
+        inputState.zoomLevel = 2.2; 
+        
         updateStatusText("MEMORY LOCKED", "#00ffff");
     } else {
         if (inputState.mouseLockedPhoto) {
@@ -454,19 +457,11 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
     
-    // 【核心修复】 全局场景公转逻辑
-    // 如果没有查看特定照片，整个场景（包括树、粒子、星星）围绕Y轴持续旋转
+    // 全局场景公转逻辑 (非照片模式下)
     if (targetState !== 'PHOTO') {
-        // 1. 自动公转 (负数代表逆时针，正数顺时针，0.0025是速度)
         scene.rotation.y -= 0.0025; 
-
-        // 2. 鼠标控制俯仰角 (X轴旋转)，保留这个为了方便查看树顶/树根
-        // 让鼠标位于屏幕中心时为0度
         const targetRotX = (inputState.y - 0.5) * 0.5;
         scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
-        
-        // 注意：移除了之前 inputState.x 控制 scene.rotation.y 的代码
-        // 现在鼠标左右移动不会改变旋转角度，而是让它自动转
     }
 
     particles.forEach(mesh => {
@@ -474,7 +469,7 @@ function updateLogic() {
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
         
-        // 粒子自转 (保持微小的 tumbling 效果，更有生气)
+        // 粒子自转
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
@@ -494,7 +489,10 @@ function updateLogic() {
         }
         else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                tPos.set(0, 0, CONFIG.camZ - 15); 
+                // 【修改这里】
+                // 之前是 CONFIG.camZ - 15 (太近)，改成 - 50 (稍微远一点，舒服)
+                tPos.set(0, 0, CONFIG.camZ - 50); 
+                
                 mesh.lookAt(camera.position); 
                 mesh.rotation.set(0,0,0); 
                 tScale.multiplyScalar(inputState.zoomLevel); 
