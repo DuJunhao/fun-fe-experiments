@@ -147,6 +147,16 @@ function onGlobalMouseDown(event) {
     const targetPhoto = getIntersectedPhoto(event.clientX, event.clientY);
 
     if (targetPhoto) {
+        // ===========================================
+        // 【新增】点击照片时，尝试播放背景音乐
+        // ===========================================
+        const bgm = document.getElementById('bgm');
+        if (bgm && bgm.paused) {
+            bgm.volume = 0.5; // 设置音量 50%
+            bgm.play().catch(e => console.log("播放被拦截，可能是浏览器策略:", e));
+        }
+        // ===========================================
+
         inputState.mouseLockedPhoto = true;
         activePhotoIdx = targetPhoto.userData.idx;
         inputState.isFist = false;
