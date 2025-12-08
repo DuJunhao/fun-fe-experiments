@@ -187,11 +187,13 @@ function updateStatusText(text, color = "#fff") {
 
 // ================= 3. Three.js 场景构建 =================
 function initThree() {
-    // 【新增】: 防止数组里有上一次加载残留的旧物体
+    // 【1. 清空旧画布】这行非常重要！
+    const container = document.getElementById('canvas-container');
+    container.innerHTML = ''; 
+
     particles = [];
     photos = [];
     
-    const container = document.getElementById('canvas-container');
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
     scene.fog = new THREE.FogExp2(0x000000, 0.001);
@@ -597,7 +599,7 @@ function updateLogic() {
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
             
             // 爆炸模式下隐藏光带
-            if (data.type === 'RIBBON') tScale.set(0, 0, 0);
+            // if (data.type === 'RIBBON') tScale.set(0, 0, 0);
 
         } else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
