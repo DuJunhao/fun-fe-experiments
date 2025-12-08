@@ -344,13 +344,13 @@ function createChristmasObjects() {
         particles.push(mesh);
     }
 
-    // ==========================================
-    // 2. 灯带 (Light Ribbon) - 重新修正部分
+   // ==========================================
+    // 2. 灯带 (Light Ribbon) - 材质增强版
     // ==========================================
     const ribbonPoints = [];
-    const ribbonSegments = 300; // 增加段数让它更圆滑
-    const ribbonTurns = 7;      // 圈数
-    const bottomRadius = 55;    // 底部稍微加大
+    const ribbonSegments = 300; 
+    const ribbonTurns = 7;
+    const bottomRadius = 55;
     const topRadius = 1;
 
     for (let i = 0; i <= ribbonSegments; i++) {
@@ -363,23 +363,22 @@ function createChristmasObjects() {
         ribbonPoints.push(new THREE.Vector3(x, y, z));
     }
     const spiralPath = new THREE.CatmullRomCurve3(ribbonPoints);
-    const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.0, 8, false); // 半径1.0，不需要太粗
+    const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 8, false); // 半径改回1.2让它显眼点
 
-    // 使用 Basic 材质确保它不受光照影响，始终明亮
+    // 【修改点】：颜色改为超亮淡黄，确保 RGB 通道值足够高以触发 Bloom
     const matGlowingRibbon = new THREE.MeshBasicMaterial({ 
-        color: 0xFFAA00, // 稍微偏橙的金黄色
+        color: 0xFFFF88, // 越接近白色(FFFFCC)，发光越强；FFFF88 是强烈的亮黄光
         side: THREE.DoubleSide
     });
 
     const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
     
-    // 【关键】手动设置 userData，确保它在 EXPLODE 模式下的位置是 0,0,0 但缩放是 1
     ribbonMesh.userData = {
         type: 'RIBBON',
         treePos: new THREE.Vector3(0, 0, 0),
-        explodePos: new THREE.Vector3(0, 0, 0), // 爆炸模式也位于中心
+        explodePos: new THREE.Vector3(0, 0, 0), 
         baseScale: new THREE.Vector3(1, 1, 1),
-        rotSpeed: { x: 0, y: 0, z: 0 } // 自身不自转，依靠 updateLogic 控制
+        rotSpeed: { x: 0, y: 0, z: 0 } 
     };
 
     scene.add(ribbonMesh);
@@ -562,24 +561,23 @@ function updateLogic() {
         // 目的：确保灯带在任何模式下都可见，且正确旋转
         // ===========================================
         if (data.type === 'RIBBON') {
-            // 强制灯带始终位于中心
+           // 位置始终居中
             tPos.set(0, 0, 0);
             
-            // 强制灯带始终保持原大小 (如果你想在爆炸时隐藏，可以把这里改为条件判断)
-            tScale.set(1, 1, 1); 
-
-            // 关键：始终让灯带绕Y轴自转，这样才有3D感
-            mesh.rotation.set(0, globalRot, 0);
-
-            // 如果是在 PHOTO 模式，且不是为了看灯带，可以让它稍微变暗或变小(可选)
-            if (targetState === 'PHOTO') {
-                // tScale.set(0, 0, 0); // 如果想在看照片时隐藏灯带，取消注释这行
+            // 【修改点】根据状态决定是否显示
+            if (targetState === 'TREE') {
+                tScale.set(1, 1, 1); // 树模式：显示
+            } else {
+                tScale.set(0, 0, 0); // 爆炸/照片模式：消失
             }
 
-            // 直接应用变换，跳过后续通用逻辑
+            // 保持自转
+            mesh.rotation.set(0, globalRot, 0);
+
+            // 平滑过渡
             mesh.position.lerp(tPos, 0.08);
             mesh.scale.lerp(tScale, 0.08);
-            return; // 【重要】直接跳过当前循环的后续步骤
+            return; // 跳过后续通用逻辑
         }
         
         // ===========================================
@@ -619,10 +617,11 @@ function updateLogic() {
             mesh.rotation.set(0, 0, 0);
             tScale.multiplyScalar(inputState.zoomLevel);
         } else {
-            // 应用全局公转
-            tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
+            // 普通物体应用公转
+            if (data.type !== 'RIBBON') {
+                tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
+            }
 
-            // 鼠标悬停放大照片
             if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
                 tScale.multiplyScalar(data.hoverScale);
             }
