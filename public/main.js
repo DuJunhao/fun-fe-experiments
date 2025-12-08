@@ -443,12 +443,12 @@ function createChristmasObjects() {
     // 层2：光晕 (Halo) - 粗、透、虚幻
     // =================================================
     // 【关键】半径设为 0.6 (是内芯的3倍粗)，用来控制光晕范围
-    const haloGeo = new THREE.TubeGeometry(spiralPath, 800, 0.35, 8, false);
+    const haloGeo = new THREE.TubeGeometry(spiralPath, 800, 0.5, 8, false);
     
     const haloMat = new THREE.MeshBasicMaterial({
         color: 0xFF8800, 
         transparent: true,
-        opacity: 0.15,    // 2. 透明度调整：从 0.3 改为 0.15 (更通透，隐隐约约)
+        opacity: 0.25,    // 2. 透明度调整：从 0.3 改为 0.15 (更通透，隐隐约约)
         blending: THREE.AdditiveBlending, 
         depthWrite: false, 
         side: THREE.DoubleSide 
