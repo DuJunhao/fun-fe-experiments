@@ -436,7 +436,7 @@ function createChristmasObjects() {
         photos.push(group);
     });
 
-    // ================= [代码块 1] 下雪特效初始化 =================
+    / ================= [代码块 1] 下雪特效初始化 =================
     const snowGeo = new THREE.CircleGeometry(0.4, 6);
     const snowMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
@@ -459,13 +459,16 @@ function createChristmasObjects() {
             type: 'SNOW',
             fallSpeed: 0.5 + Math.random() * 0.8,    // 下落速度
             driftSpeed: (Math.random() - 0.5) * 0.2, // 左右飘动速度
-            randomPhase: Math.random() * Math.PI * 2 // 随机相位
+            randomPhase: Math.random() * Math.PI * 2,// 随机相位
+            
+            // 【关键修复】必须加上这一行，否则 updateLogic 会报错！
+            baseScale: new THREE.Vector3(1, 1, 1) 
         };
 
         scene.add(snowMesh);
-        particles.push(snowMesh); // 必须加入 particles 数组
+        particles.push(snowMesh); 
     }
-}
+} // <--- createChristmasObjects 结束的大括号
 
 function initParticle(mesh, type, idx) {
     const h = Math.random();
