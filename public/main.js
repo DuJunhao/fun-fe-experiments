@@ -436,7 +436,7 @@ function createChristmasObjects() {
         photos.push(group);
     });
 
-    / ================= [代码块 1] 下雪特效初始化 =================
+    // ================= [代码块 1] 下雪特效初始化 =================
     const snowGeo = new THREE.CircleGeometry(0.4, 6);
     const snowMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
