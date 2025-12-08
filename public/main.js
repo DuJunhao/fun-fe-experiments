@@ -272,45 +272,42 @@ function initThree() {
 
 function createChristmasObjects() {
     // ==========================================================================
-    // 新增辅助函数：创建一个圆形的、中心发散的柔光纹理
-    // 这就是让方形物体看起来圆润柔和的关键
+    // 辅助函数：创建柔光纹理 (保持不变)
     // ==========================================================================
     function createGlowTexture() {
         const canvas = document.createElement('canvas');
         canvas.width = 64; canvas.height = 64;
         const ctx = canvas.getContext('2d');
-        // 创建径向渐变 (从中心向外)
         const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-        gradient.addColorStop(0, 'rgba(255, 255, 240, 1)');   // 中心：亮暖白
-        gradient.addColorStop(0.4, 'rgba(255, 220, 180, 0.6)'); // 中间：柔和黄光
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');         // 边缘：完全透明
-        
+        gradient.addColorStop(0, 'rgba(255, 255, 240, 1)');
+        gradient.addColorStop(0.4, 'rgba(255, 220, 180, 0.6)');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 64, 64);
-        
         const tex = new THREE.CanvasTexture(canvas);
         tex.needsUpdate = true;
         return tex;
     }
 
     // 1. 纹理配置
-    const leafTex = createCrossTexture('#228B22', '#003300');
+    // 【修改点 1】松树颜色大改：背景用极深的墨绿色，十字带用近乎黑色
+    const leafTex = createCrossTexture('#0B300B', '#000500'); 
+    
     const giftTex = createCrossTexture('#DC143C', '#FFD700');
-    // 【新增】创建柔光纹理
     const glowTex = createGlowTexture();
 
     // 2. 材质配置
-    // 【新增】柔光点精灵材质
     const matGlowSprite = new THREE.SpriteMaterial({
         map: glowTex,
         color: 0xffffff,
         transparent: true,
-        blending: THREE.AdditiveBlending, // 叠加模式，让光更亮且不遮挡后方
-        depthWrite: false // 不写入深度，避免产生硬边
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
     });
 
+    // 这里的 Lambert 材质配合深色纹理，吸光效果更好，看起来更像树叶
     const matLeaf = new THREE.MeshLambertMaterial({ map: leafTex });
-    // 稍微增加一点反光感
+    
     const matGift = new THREE.MeshPhysicalMaterial({ map: giftTex, roughness: 0.4, metalness: 0.3, emissive: 0x220000, emissiveIntensity: 0.2 });
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0 });
     const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
@@ -320,7 +317,6 @@ function createChristmasObjects() {
     const matTopStar = new THREE.MeshPhysicalMaterial({ color: 0xFFD700, metalness: 1.0, roughness: 0.0, emissive: 0xFFEE88, emissiveIntensity: 5.0, clearcoat: 1.0 });
 
     // 3. 几何体配置
-    // 稍微减小一点几何体的尺寸，给柔光腾出空间
     const leafGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
     const sphereGeo = new THREE.SphereGeometry(1.2, 16, 16);
     const giftGeo = new THREE.BoxGeometry(2.0, 2.0, 2.0);
@@ -339,21 +335,20 @@ function createChristmasObjects() {
     const baseCount = CONFIG.particleCount - 150;
 
     // ==========================================
-    // 4. 创建普通装饰物 (循环)
+    // 4. 创建普通装饰物
     // ==========================================
     for (let i = 0; i < baseCount; i++) {
         let mesh;
-        // 创建一个组，用于包裹实体模型和柔光精灵
         const containerGroup = new THREE.Group(); 
         const type = Math.random();
-        let isSuitableForGlow = true; // 标记是否适合添加柔光
+        let isSuitableForGlow = true;
 
         if (type < 0.60) {
             mesh = new THREE.Mesh(leafGeo, matLeaf);
             mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
             mesh.scale.setScalar(0.8 + Math.random() * 0.5);
             initParticle(containerGroup, 'LEAF', i);
-            isSuitableForGlow = false; // 树叶块通常不发光，还是硬一点好，这里选择不加柔光点
+            isSuitableForGlow = false; // 树叶不发光
         } else {
             if (type < 0.70) {
                 mesh = new THREE.Mesh(sphereGeo, Math.random() > 0.5 ? matGold : matRedShiny);
@@ -385,34 +380,26 @@ function createChristmasObjects() {
             }
             
             const scaleVar = 0.8 + Math.random() * 0.4;
-            // 注意：这里是对 containerGroup 进行初始化，而不是内部的 mesh
             if (!mesh.isGroup) mesh.scale.setScalar(scaleVar);
             initParticle(containerGroup, 'DECOR', i);
         }
 
-        // 将实体模型加入容器
         containerGroup.add(mesh);
 
-        // ========================================================
-        // 【核心修改】给适合的装饰物挂载一个圆形的柔光精灵
-        // ========================================================
         if (isSuitableForGlow) {
             const glowSprite = new THREE.Sprite(matGlowSprite);
-            // 设置柔光的大小，要比装饰物稍微大一点点
             const glowSize = 3.5 + Math.random() * 1.0;
             glowSprite.scale.set(glowSize, glowSize, 1.0);
-            // 稍微往前（Z轴正向）移一点点，确保它覆盖在物体表面
             glowSprite.position.set(0, 0, 0.1);
             containerGroup.add(glowSprite);
         }
         
-        // 将包含实体和柔光的组加入场景
         scene.add(containerGroup);
         particles.push(containerGroup);
     }
 
     // ==========================================
-    // 5. 灯带 (保持不变，它已经很亮了)
+    // 5. 灯带 (Light Ribbon)
     // ==========================================
     const ribbonPoints = [];
     const ribbonSegments = 300;
@@ -433,7 +420,8 @@ function createChristmasObjects() {
     const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 8, false);
 
     const matGlowingRibbon = new THREE.MeshBasicMaterial({
-        color: 0xFFFF88, 
+        // 【修改点 2】颜色调暗为深橙色/金色，避免光晕太强
+        color: 0xFFA500, 
         side: THREE.DoubleSide
     });
 
@@ -451,26 +439,24 @@ function createChristmasObjects() {
     particles.push(ribbonMesh);
 
     // ==========================================
-    // 6. 树顶星星 (给它也加一个巨大的柔光)
+    // 6. 树顶星星
     // ==========================================
     const topStarGroup = new THREE.Group();
     const topStarMesh = new THREE.Mesh(topStarGeo, matTopStar);
     topStarGroup.add(topStarMesh);
 
-    // 添加一个大的顶部柔光
     const topGlowSprite = new THREE.Sprite(matGlowSprite);
-    topGlowSprite.scale.set(12, 12, 1.0); // 比普通装饰大很多
+    topGlowSprite.scale.set(12, 12, 1.0); 
     topStarGroup.add(topGlowSprite);
 
     initParticle(topStarGroup, 'TOP_STAR', 20000);
     topStarGroup.userData.treePos.set(0, CONFIG.treeHeight / 2 + 2, 0);
-    // 这里要设置 group 的旋转速度，updateLogic 里会用到
     topStarGroup.userData.rotSpeed = { x: 0, y: 0.02, z: 0 }; 
     scene.add(topStarGroup);
     particles.push(topStarGroup);
 
     // ==========================================
-    // 7. 照片卡片 (不变)
+    // 7. 照片卡片
     // ==========================================
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.2);
@@ -497,7 +483,7 @@ function createChristmasObjects() {
     });
 
     // ==========================================
-    // 8. 下雪特效 (不变)
+    // 8. 下雪特效
     // ==========================================
     const snowGeo = new THREE.CircleGeometry(0.4, 6);
     const snowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false });
@@ -520,7 +506,6 @@ function createChristmasObjects() {
         scene.add(snowMesh);
         particles.push(snowMesh);
     }
-
 }
 
 function initParticle(mesh, type, idx) {
