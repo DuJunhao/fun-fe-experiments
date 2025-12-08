@@ -209,7 +209,8 @@ function initThree() {
     renderer = new THREE.WebGLRenderer({ antialias: true, stencil: false, depth: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMapping = THREE.ReinhardToneMapping; // 换一种映射模式，光线更柔和
+    renderer.toneMappingExposure = 2.0; // 提高整体曝光度，让更多物体进入发光阈值
     container.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
@@ -222,9 +223,9 @@ function initThree() {
 
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.9;
-    bloomPass.strength = 1.3;
-    bloomPass.radius = 0.5;
+    bloomPass.threshold = 0.7; // 【关键】建议调低！越低越容易发光 (0 = 全发光, 1 = 只有极亮才发光)
+    bloomPass.strength = 2.5;  // 【关键】建议调高！光晕的强度 (建议 1.5 ~ 3.0)
+    bloomPass.radius = 0.8;    // 光晕扩散的范围 (0 ~ 1)
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
