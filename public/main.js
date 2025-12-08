@@ -374,9 +374,13 @@ function createChristmasObjects() {
     const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 12, false);
 
     // --- C. 创建发光材质 ---
-    const matGlowingRibbon = new THREE.MeshBasicMaterial({
-        color: 0xFFD700,
-        side: THREE.DoubleSide
+    const matGlowingRibbon = new THREE.MeshStandardMaterial({
+        color: 0xFFD700,        // 基础金色
+        emissive: 0xFFD700,     // 自发光颜色（关键！）
+        emissiveIntensity: 3.0, // 发光强度，大于 1.0 才能产生强烈的辉光
+        roughness: 0.3,
+        metalness: 0.7,
+        side: THREE.DoubleSide  // 双面渲染，确保任何角度看都没问题
     });
 
     // --- D. 创建单一网格并加入系统 ---
@@ -388,9 +392,11 @@ function createChristmasObjects() {
     ribbonMesh.userData = {
         type: 'RIBBON',
         treePos: new THREE.Vector3(0, 0, 0),
-        explodePos: new THREE.Vector3(0, CONFIG.treeHeight + 150, 0),
+        
+        explodePos: new THREE.Vector3(0, 0, 0), 
+
         baseScale: new THREE.Vector3(1, 1, 1),
-        rotSpeed: { x: 0, y: 0, z: 0 } // 设为0，由updateLogic手动控制
+        rotSpeed: { x: 0, y: 0, z: 0 } 
     };
 
     scene.add(ribbonMesh);
@@ -595,7 +601,7 @@ function updateLogic() {
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
             
             // 爆炸模式下隐藏光带
-            // if (data.type === 'RIBBON') tScale.set(0, 0, 0);
+            if (data.type === 'RIBBON') tScale.set(0, 0, 0);
 
         } else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
