@@ -239,7 +239,7 @@ function initThree() {
 
 function createChristmasObjects() {
     // 纹理
-    const leafTex = createCrossTexture('#90EE90', '#006400');
+    const leafTex = createCrossTexture('#228B22', '#003300');
     const giftTex = createCrossTexture('#DC143C', '#FFD700');
 
     // 材质
