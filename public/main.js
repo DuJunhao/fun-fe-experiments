@@ -379,32 +379,46 @@ function createChristmasObjects() {
     // ==========================================
     // 5. 灯带 (Light Ribbon) - 【核心修改区域】
     // ==========================================
+    // ==========================================
+    // 5. 灯带 (Light Ribbon) - 【最终优化版】
+    // ==========================================
     const ribbonPoints = [];
-    const ribbonSegments = 400; // 增加分段让细线更圆滑
-    const ribbonTurns = 7;
-    const bottomRadius = 55;
-    const topRadius = 1;
+    const ribbonSegments = 500; // 增加分段，更顺滑
+    const ribbonTurns = 9;      // 【修改】增加圈数，让底部更密
+    
+    // 【修改】收紧底部半径 (55 -> 45)，让它紧贴树身，不再悬空
+    const bottomRadius = 45;    
+    const topRadius = 0.5;      // 顶部收得更尖
+
+    // 【修改】高度范围：从 -50 (比树底更低) 到 45 (树顶)
+    const yStart = -50; 
+    const yEnd = 45;
 
     for (let i = 0; i <= ribbonSegments; i++) {
         const progress = i / ribbonSegments;
         const angle = progress * Math.PI * 2 * ribbonTurns;
-        const y = (progress - 0.5) * CONFIG.treeHeight;
+        
+        // 使用线性插值计算高度
+        const y = THREE.MathUtils.lerp(yStart, yEnd, progress);
+        
+        // 半径随着高度变化
         const radius = THREE.MathUtils.lerp(bottomRadius, topRadius, progress);
+        
         const x = Math.cos(angle) * radius;
         const z = Math.sin(angle) * radius;
         ribbonPoints.push(new THREE.Vector3(x, y, z));
     }
+    
     const spiralPath = new THREE.CatmullRomCurve3(ribbonPoints);
-
-    // 【修改 1】：半径改细！从 1.2 改为 0.3
+    
+    // 保持细线 (0.3)
     const tubeGeo = new THREE.TubeGeometry(spiralPath, 800, 0.3, 8, false);
 
-    // 【修改 2】：使用 Standard 材质 + 自发光(Emissive)
-    // 这样可以通过 emissiveIntensity 强制让暗色也发光
+    // 保持高亮发光材质
     const matGlowingRibbon = new THREE.MeshStandardMaterial({
-        color: 0x000000,        // 基础色设为黑，全靠发光
-        emissive: 0xFF8800,     // 发光色：深金橙色 (不会像浅黄那么刺眼)
-        emissiveIntensity: 4.0, // 【关键】强度设高，强制触发 Bloom 光晕
+        color: 0x000000,        
+        emissive: 0xFF8800,     // 深金橙色
+        emissiveIntensity: 4.0, // 强力发光
         roughness: 0.4,
         metalness: 1.0
     });
