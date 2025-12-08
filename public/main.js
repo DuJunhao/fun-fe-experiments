@@ -688,66 +688,72 @@ async function initMediaPipeSafe() {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
 
-                // ================= 1. 计算握拳 (Fist) - 优先计算 =================
-                // 计算 食指(8)、中指(12)、无名指(16)、小指(20) 到手腕(0) 的距离
+                // ================= 1. 计算原始数据 (Raw Data) =================
+                // 捏合距离 (大拇指4 - 食指8)
+                const rawPinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+
+                // 握拳距离 (四个指尖到手腕)
                 const fingerTips = [8, 12, 16, 20];
                 let totalDist = 0;
                 fingerTips.forEach(i => {
                     totalDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y);
                 });
-                
-                // 【优化】：稍微放宽阈值到 0.25 (原本是 0.22)，让握拳更容易触发
-                const isFistDetected = (totalDist / 4) < 0.25;
+                const avgFingerDist = totalDist / 4;
 
-                // ================= 2. 平滑处理坐标 (消除移动抖动) =================
-                // 只有在【没握拳】且【没锁定照片】时才更新位置
+                // ================= 2. 更新平滑数据 (Smoothing) =================
+                // 无论是否处于捏合状态，都在后台更新平滑值，保证数值连续
+                // 0.15 是阻尼系数：越小越稳，越大越跟手
+                inputState.smoothPinch += (rawPinchDist - inputState.smoothPinch) * 0.15;
+
+                // 只有在【没锁定照片】时才更新鼠标位置，防止照片乱跑
                 if (activePhotoIdx === -1) {
                     const targetX = 1.0 - lm[9].x;
                     const targetY = lm[9].y;
-
-                    // 平滑公式 (Lerp): 0.15 系数
                     inputState.smoothX += (targetX - inputState.smoothX) * 0.15;
                     inputState.smoothY += (targetY - inputState.smoothY) * 0.15;
-
+                    
                     inputState.x = inputState.smoothX;
                     inputState.y = inputState.smoothY;
                 }
 
-                // ================= 3. 平滑处理捏合 (消除缩放颤抖) =================
-                // 原始捏合距离
-                const rawPinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                
-                // 平滑距离
-                inputState.smoothPinch += (rawPinchDist - inputState.smoothPinch) * 0.15;
+                // ================= 3. 判定状态 (State Detection) =================
+                // 【关键修改】：判定是否捏合，使用【原始距离 rawPinchDist】
+                // 这样反应最快，不需要等平滑数值追上来
+                let isPinchDetected = (rawPinchDist < 0.06); 
 
-                // 辅助判断：中指伸直 (防止握拳被识别为捏合)
-                const middleFingerDist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
-                const isMiddleFingerExtended = middleFingerDist > 0.25; 
+                // 判定是否握拳 (阈值 0.25)
+                let isFistDetected = (avgFingerDist < 0.25);
 
-                // 判定是否捏合：(距离够近) && (不是握拳) && (中指是直的)
-                // 【关键】使用平滑后的 smoothPinch 判定，防止边界跳动
-                const isPinchDetected = (inputState.smoothPinch < 0.08) && !isFistDetected && isMiddleFingerExtended;
+                // 优先级处理：如果正在捏合，就不算握拳 (防止冲突)
+                if (isPinchDetected) {
+                    isFistDetected = false;
+                }
 
-                // ================= 4. 更新全局状态 =================
                 inputState.isFist = isFistDetected;
                 inputState.isPinch = isPinchDetected;
 
-                // ================= 5. 执行逻辑 =================
+                // ================= 4. 执行业务逻辑 =================
                 if (inputState.isPinch) {
                     const now = Date.now();
-                    // 解锁照片逻辑
+                    
+                    // 触发解锁 (0.5秒冷却)
                     if (activePhotoIdx === -1 && now - inputState.lastPinchTime > 500) {
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
                         inputState.lastPinchTime = now;
-                        inputState.zoomLevel = 2.2;
+                        inputState.zoomLevel = 2.2; // 初始放大一点
                         updateStatusText("MEMORY UNLOCKED", "#00ffff");
                     }
                     
-                    // 缩放逻辑：使用平滑值
-                    let scale = (inputState.smoothPinch - 0.02) * 60.0;
+                    // 【关键修改】：虽然判定用原始值，但计算缩放用【平滑值 smoothPinch】
+                    // 这样手抖的时候，isPinch 依然是 true (保持锁定)，但 zoomLevel 不会乱跳
+                    // 调整了公式参数，让放大更自然
+                    let scale = (inputState.smoothPinch - 0.02) * 80.0; 
+                    
+                    // 限制缩放范围
                     inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
+
                 } else {
-                    // 如果松开手，且当前锁定了照片，则退出照片模式
+                    // 松开手，如果刚才锁定了照片，现在释放
                     if (activePhotoIdx !== -1) {
                         activePhotoIdx = -1;
                         updateStatusText("GALAXY MODE");
