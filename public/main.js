@@ -248,9 +248,9 @@ function initThree() {
 
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.8;
-    bloomPass.strength = 1.5;
-    bloomPass.radius = 0.5;
+    bloomPass.threshold = 0.25;
+    bloomPass.strength = 0.6;
+    bloomPass.radius = 0.7;
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
