@@ -48,7 +48,7 @@ const inputState = {
     isPinch: false,
     zoomLevel: 3.5,
     lastPinchTime: 0,
-    
+
     // 新增：平滑缓冲变量 (默认值)
     smoothX: 0.5,
     smoothY: 0.5,
@@ -434,6 +434,36 @@ function createChristmasObjects() {
         particles.push(group);
         photos.push(group);
     });
+
+    // ================= [代码块 1] 下雪特效初始化 =================
+    const snowGeo = new THREE.CircleGeometry(0.4, 6);
+    const snowMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.8,
+        depthWrite: false
+    });
+
+    for (let i = 0; i < 300; i++) {
+        const snowMesh = new THREE.Mesh(snowGeo, snowMat);
+
+        // 随机散布在空中
+        const x = (Math.random() - 0.5) * 300;
+        const y = Math.random() * 200 + 50;
+        const z = (Math.random() - 0.5) * 300;
+
+        snowMesh.position.set(x, y, z);
+
+        snowMesh.userData = {
+            type: 'SNOW',
+            fallSpeed: 0.5 + Math.random() * 0.8,    // 下落速度
+            driftSpeed: (Math.random() - 0.5) * 0.2, // 左右飘动速度
+            randomPhase: Math.random() * Math.PI * 2 // 随机相位
+        };
+
+        scene.add(snowMesh);
+        particles.push(snowMesh); // 必须加入 particles 数组
+    }
 }
 
 function initParticle(mesh, type, idx) {
@@ -567,6 +597,30 @@ function updateLogic() {
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
 
+        // ================= 修改开始：添加雪花运动逻辑 =================
+        if (data.type === 'SNOW') {
+            // 1. 向下移动
+            mesh.position.y -= data.fallSpeed;
+
+            // 2. 水平方向轻微摆动（模拟风吹）
+            mesh.position.x += Math.sin(time + data.randomPhase) * data.driftSpeed;
+            // 确保雪花始终面向摄像机（对于 2D CircleGeometry 很有必要）
+            mesh.lookAt(camera.position);
+
+            // 3. 循环机制：如果掉到屏幕下方，就回到顶部
+            // 这里的 -150 是一个大概的底部边界值
+            if (mesh.position.y < -150) {
+                mesh.position.y = 200; // 回到顶部
+                // 重新随机水平位置，避免重复感
+                mesh.position.x = (Math.random() - 0.5) * 300;
+                mesh.position.z = (Math.random() - 0.5) * 300;
+            }
+
+            // 雪花不需要插值，直接应用位置即可
+            // 直接 return，不执行后面的通用逻辑
+            return;
+        }
+
         // ===========================================
         // 特殊处理：灯带 (RIBBON)
         // 目的：确保灯带在任何模式下都可见，且正确旋转
@@ -657,7 +711,7 @@ function onWindowResize() {
     composer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ================= 5. MediaPipe =================
+
 // ================= 5. MediaPipe (增强版) =================
 async function initMediaPipeSafe() {
     const video = document.getElementById('input_video');
@@ -711,7 +765,7 @@ async function initMediaPipeSafe() {
                     const targetY = lm[9].y;
                     inputState.smoothX += (targetX - inputState.smoothX) * 0.15;
                     inputState.smoothY += (targetY - inputState.smoothY) * 0.15;
-                    
+
                     inputState.x = inputState.smoothX;
                     inputState.y = inputState.smoothY;
                 }
@@ -719,7 +773,7 @@ async function initMediaPipeSafe() {
                 // ================= 3. 判定状态 (State Detection) =================
                 // 【关键修改】：判定是否捏合，使用【原始距离 rawPinchDist】
                 // 这样反应最快，不需要等平滑数值追上来
-                let isPinchDetected = (rawPinchDist < 0.06); 
+                let isPinchDetected = (rawPinchDist < 0.06);
 
                 // 判定是否握拳 (阈值 0.25)
                 let isFistDetected = (avgFingerDist < 0.25);
@@ -735,7 +789,7 @@ async function initMediaPipeSafe() {
                 // ================= 4. 执行业务逻辑 =================
                 if (inputState.isPinch) {
                     const now = Date.now();
-                    
+
                     // 触发解锁 (0.5秒冷却)
                     if (activePhotoIdx === -1 && now - inputState.lastPinchTime > 500) {
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
@@ -743,12 +797,12 @@ async function initMediaPipeSafe() {
                         inputState.zoomLevel = 2.2; // 初始放大一点
                         updateStatusText("MEMORY UNLOCKED", "#00ffff");
                     }
-                    
+
                     // 【关键修改】：虽然判定用原始值，但计算缩放用【平滑值 smoothPinch】
                     // 这样手抖的时候，isPinch 依然是 true (保持锁定)，但 zoomLevel 不会乱跳
                     // 调整了公式参数，让放大更自然
-                    let scale = (inputState.smoothPinch - 0.02) * 80.0; 
-                    
+                    let scale = (inputState.smoothPinch - 0.02) * 80.0;
+
                     // 限制缩放范围
                     inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
 
