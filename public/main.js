@@ -187,6 +187,10 @@ function updateStatusText(text, color = "#fff") {
 
 // ================= 3. Three.js 场景构建 =================
 function initThree() {
+    // 【新增】: 防止数组里有上一次加载残留的旧物体
+    particles = [];
+    photos = [];
+    
     const container = document.getElementById('canvas-container');
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
@@ -381,7 +385,6 @@ function createChristmasObjects() {
     // 现在整个光带是一个单独的 Mesh
     const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
     
-    // 【新增】防止摄像机角度特殊时光带被误判为看不见而消失
     ribbonMesh.frustumCulled = false; 
 
     ribbonMesh.userData = {
@@ -389,8 +392,7 @@ function createChristmasObjects() {
         treePos: new THREE.Vector3(0, 0, 0),
         explodePos: new THREE.Vector3(0, CONFIG.treeHeight + 150, 0),
         baseScale: new THREE.Vector3(1, 1, 1),
-        // 【建议】把这里的 rotSpeed 改为全 0，因为我们会手动控制旋转
-        rotSpeed: { x: 0, y: 0, z: 0 } 
+        rotSpeed: { x: 0, y: 0, z: 0 } // 设为0，由updateLogic手动控制
     };
 
     scene.add(ribbonMesh);
