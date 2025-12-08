@@ -102,6 +102,9 @@ async function fetchBucketPhotos() {
         for (let i = 1; i <= 6; i++) imageList.push(`christa/${i}.jpg`);
     }
 
+    // 【在这里调用】
+    fetchBackgroundMusic(); // <--- 并行加载音乐，不需要 await 阻塞图片加载
+    
     initThree();
     setTimeout(initMediaPipeSafe, 100);
 }
@@ -965,5 +968,34 @@ function enableMouseMode(msg) {
     const loader = document.getElementById('loader');
     if (loader) { loader.style.opacity = 0; setTimeout(() => loader.remove(), 500); }
 }
+// ================= [新增] 动态加载背景音乐 =================
+async function fetchBackgroundMusic() {
+    try {
+        const bgm = document.getElementById('bgm');
+        if (!bgm) return;
+
+        // 1. 请求后端接口
+        const response = await fetch('/api/music');
+        
+        if (!response.ok) {
+            console.warn("没有找到背景音乐，使用默认/本地文件");
+            return; 
+        }
+
+        const data = await response.json();
+        
+        // 2. 拿到 CDN 地址 (例如: https://static.refinefuture.com/last_christmas.mp3)
+        console.log("🎵 从 Bucket 加载音乐:", data.url);
+
+        // 3. 替换 <audio> 的源
+        bgm.src = data.url;
+        bgm.load(); // 重新加载音频资源
+
+    } catch (e) {
+        console.error("加载背景音乐失败:", e);
+    }
+}
+
+// ========================================================
 
 fetchBucketPhotos();
