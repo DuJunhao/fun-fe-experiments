@@ -13,9 +13,13 @@ const CONFIG = {
     treeHeight: 90,
     explodeRadius: 150,
     camZ: 130,
+    // 增加一点照片的自转速度，让效果更明显
+    photoRotSpeed: 0.015,
     colors: { 
         gold: 0xFFD700,
         red: 0xC41E3A,    
+        green: 0x053505,  
+        leafGreen: 0x2E8B57, 
         white: 0xFFFFFF,
         emissiveGold: 0xAA8800
     }
@@ -44,48 +48,18 @@ const inputState = {
 const textureLoader = new THREE.TextureLoader();
 textureLoader.setCrossOrigin('anonymous');
 
-// ================= 辅助：程序化生成纹理 =================
-
-// 1. Loading 占位图
+// 占位图
 function createTextTexture(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 512; canvas.height = 680;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#111'; ctx.fillRect(0,0,512,680);
-    ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 20; ctx.strokeRect(0,0,512,680);
-    ctx.font = 'bold 50px Arial'; ctx.fillStyle = '#d4af37'; ctx.textAlign = 'center';
+    ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 10; ctx.strokeRect(20,20,472,640);
+    ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#d4af37'; ctx.textAlign = 'center';
     ctx.fillText(text, 256, 340);
     return new THREE.CanvasTexture(canvas);
 }
 const loadingTex = createTextTexture("LOADING...");
-
-// 2. 【核心新增】十字纹理生成器 (用于松针和礼物)
-function createCrossTexture(bgColorStr, crossColorStr) {
-    const size = 128; // 纹理尺寸
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    
-    // 背景色
-    ctx.fillStyle = bgColorStr;
-    ctx.fillRect(0, 0, size, size);
-    
-    // 十字架
-    ctx.fillStyle = crossColorStr;
-    const thickness = size / 4; // 十字粗细
-    const center = size / 2;
-    
-    // 竖条
-    ctx.fillRect(center - thickness/2, 0, thickness, size);
-    // 横条
-    ctx.fillRect(0, center - thickness/2, size, thickness);
-    
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    // 设置最近邻过滤，保持像素颗粒感，看起来更有积木感
-    tex.magFilter = THREE.NearestFilter; 
-    return tex;
-}
 
 // ================= 1. 启动入口 =================
 async function fetchBucketPhotos() {
@@ -123,7 +97,6 @@ async function fetchBucketPhotos() {
 }
 
 // ================= 2. 交互逻辑 =================
-
 function getIntersectedPhoto(clientX, clientY) {
     const mv = new THREE.Vector2();
     mv.x = (clientX / window.innerWidth) * 2 - 1;
@@ -149,7 +122,6 @@ function onGlobalMouseMove(event) {
         const hit = getIntersectedPhoto(event.clientX, event.clientY);
         document.body.style.cursor = hit ? 'pointer' : 'default';
         if(hit) {
-             // 简单的悬停放大
              photos.forEach(p => {
                  p.userData.hoverScale = (p === hit) ? 1.15 : 1.0;
              });
@@ -229,10 +201,9 @@ function initThree() {
     const centerLight = new THREE.PointLight(0xFFD700, 5, 150);
     scene.add(centerLight);
     
-    // 辉光配置
     const renderPass = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.85; 
+    bloomPass.threshold = 0.9; 
     bloomPass.strength = 1.3; 
     bloomPass.radius = 0.5;
     composer = new EffectComposer(renderer);
@@ -253,53 +224,47 @@ function initThree() {
 }
 
 function createChristmasObjects() {
-    // === 生成纹理 (保持不变) ===
+    // 纹理
     const leafTex = createCrossTexture('#90EE90', '#006400');
     const giftTex = createCrossTexture('#DC143C', '#FFD700');
 
-    // === 材质定义 (保持不变) ===
+    // 材质
     const matLeaf = new THREE.MeshLambertMaterial({ map: leafTex });
-    const matGift = new THREE.MeshPhysicalMaterial({ 
-        map: giftTex, roughness: 0.3, metalness: 0.1, emissive: 0x330000, emissiveIntensity: 0.5
-    });
+    const matGift = new THREE.MeshPhysicalMaterial({ map: giftTex, roughness: 0.3, metalness: 0.1, emissive: 0x330000, emissiveIntensity: 0.5 });
     const matGold = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.gold, metalness: 0.9, roughness: 0.1, emissive: CONFIG.colors.emissiveGold, emissiveIntensity: 2.0 });
     const matRedShiny = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.red, metalness: 0.7, roughness: 0.15, emissive: 0x550000, emissiveIntensity: 1.5 });
     const matWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }); 
     const matCandy = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.white, metalness: 0.3, roughness: 0.4, emissive: 0xFFFFFF, emissiveIntensity: 1.2 });
+    
+    const matLightString = new THREE.MeshBasicMaterial({ color: 0xFFD700 }); 
+    // 树顶大星星材质
+    const matTopStar = new THREE.MeshPhysicalMaterial({ color: 0xFFD700, metalness: 1.0, roughness: 0.0, emissive: 0xFFEE88, emissiveIntensity: 5.0, clearcoat: 1.0 });
 
-    // 【新增】树顶大星星的专用材质 (高亮发光)
-    const matTopStar = new THREE.MeshPhysicalMaterial({ 
-        color: 0xFFD700, // 金色
-        metalness: 1.0, 
-        roughness: 0.0, 
-        emissive: 0xFFEE88, // 更亮的淡金色自发光
-        emissiveIntensity: 5.0, // 强度拉高，配合辉光特效
-        clearcoat: 1.0
-    });
-
-    // === 几何体 (保持不变) ===
+    // 几何体
     const leafGeo = new THREE.BoxGeometry(2.0, 2.0, 2.0); 
     const sphereGeo = new THREE.SphereGeometry(1.3, 16, 16); 
     const giftGeo = new THREE.BoxGeometry(2.2, 2.2, 2.2); 
     const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); 
-    const starGeo = new THREE.OctahedronGeometry(1.8); // 普通小星星
-    
-    // 【新增】树顶大星星的几何体 (尺寸更大)
-    const topStarGeo = new THREE.OctahedronGeometry(4.5); 
+    const starGeo = new THREE.OctahedronGeometry(1.8); 
+    const topStarGeo = new THREE.OctahedronGeometry(4.5);
+    const lightBulbGeo = new THREE.SphereGeometry(0.6, 8, 8);
 
     const hatConeGeo = new THREE.ConeGeometry(1.2, 3, 16);
     const hatBrimGeo = new THREE.TorusGeometry(1.2, 0.3, 12, 24);
     const stockLegGeo = new THREE.CylinderGeometry(0.8, 0.8, 2.5, 12);
     const stockFootGeo = new THREE.CylinderGeometry(0.8, 0.9, 1.5, 12);
 
-    // === 1. 生成树体和普通装饰 (循环逻辑保持不变) ===
-    for(let i=0; i<CONFIG.particleCount; i++) {
+    const baseCount = CONFIG.particleCount - 150; 
+    
+    // 1. 普通装饰
+    for(let i=0; i<baseCount; i++) {
         let mesh;
         const type = Math.random();
 
         if (type < 0.60) {
             mesh = new THREE.Mesh(leafGeo, matLeaf);
             mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+            mesh.scale.setScalar(0.8 + Math.random() * 0.5);
             initParticle(mesh, 'LEAF', i);
         } else {
             if (type < 0.70) {
@@ -330,33 +295,40 @@ function createChristmasObjects() {
                 group.add(leg); group.add(foot); group.add(cuff);
                 mesh = group;
             }
-            
             const scaleVar = 0.8 + Math.random() * 0.4;
-            mesh.scale.setScalar(scaleVar);
+            if(!mesh.isGroup) mesh.scale.setScalar(scaleVar);
             initParticle(mesh, 'DECOR', i);
         }
-        
         scene.add(mesh);
         particles.push(mesh);
     }
 
-    // === 【新增】创建树顶大星星 ===
-    const topStarMesh = new THREE.Mesh(topStarGeo, matTopStar);
-    
-    // 使用一个特殊的索引和类型
-    initParticle(topStarMesh, 'TOP_STAR', CONFIG.particleCount + 100);
-    
-    // 【核心】强制覆盖其目标位置 (treePos) 到树的最顶端
-    // CONFIG.treeHeight 是 90，中心点是 0，所以顶部大约是 +45。我们稍微往上提一点到 +47。
-    topStarMesh.userData.treePos.set(0, CONFIG.treeHeight / 2 + 2, 0);
-    
-    // 让大星星自转速度稍微快一点，并且只绕 Y 轴转
-    topStarMesh.userData.rotSpeed = {x: 0, y: 0.02, z: 0};
+    // 2. 灯带
+    const lightCount = 120;
+    for(let i=0; i<lightCount; i++) {
+        const mesh = new THREE.Mesh(lightBulbGeo, matLightString);
+        initParticle(mesh, 'LIGHT', i + 10000); 
 
+        const progress = i / lightCount; 
+        const angle = progress * Math.PI * 14; 
+        const y = (progress - 0.5) * CONFIG.treeHeight; 
+        const radius = (1.0 - progress) * 45 + 2; 
+
+        mesh.userData.treePos.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+        scene.add(mesh);
+        particles.push(mesh);
+    }
+
+    // 3. 树顶星星
+    const topStarMesh = new THREE.Mesh(topStarGeo, matTopStar);
+    initParticle(topStarMesh, 'TOP_STAR', 20000);
+    // 强制位于最顶端
+    topStarMesh.userData.treePos.set(0, CONFIG.treeHeight / 2 + 2, 0);
+    topStarMesh.userData.rotSpeed = {x: 0, y: 0.02, z: 0};
     scene.add(topStarMesh);
     particles.push(topStarMesh);
 
-    // === 照片卡片 (保持不变) ===
+    // 4. 照片卡片
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.2); 
     const borderMat = new THREE.MeshStandardMaterial({
@@ -369,7 +341,6 @@ function createChristmasObjects() {
             side: THREE.DoubleSide,
             toneMapped: false 
         });
-        
         const url = CONFIG.publicBaseUrl + filename;
         textureLoader.load(url, (tex) => {
             tex.colorSpace = THREE.SRGBColorSpace;
@@ -380,7 +351,6 @@ function createChristmasObjects() {
 
         const photoMesh = new THREE.Mesh(photoGeo, mat);
         photoMesh.position.z = 0.15; 
-
         const border = new THREE.Mesh(borderGeo, borderMat);
         border.position.z = -0.15; 
 
@@ -398,8 +368,9 @@ function createChristmasObjects() {
 
 function initParticle(mesh, type, idx) {
     const h = Math.random();
-    // 调整分布：树叶(LEAF)更密集
-    const radiusMod = type === 'LEAF' ? 0.8 : 1.1; 
+    let radiusMod = 1.0;
+    if (type === 'LEAF') radiusMod = 0.85; 
+
     const angle = h * Math.PI * 25 + idx * 0.1; 
     const r = ((1.05 - h) * 40) * radiusMod; 
     const treePos = new THREE.Vector3(Math.cos(angle)*r, (h-0.5)*CONFIG.treeHeight, Math.sin(angle)*r);
@@ -454,8 +425,25 @@ function createMerryChristmas() {
     });
 }
 
+function createCrossTexture(bgColorStr, crossColorStr) {
+    const size = 128; 
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = bgColorStr; ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = crossColorStr;
+    const thickness = size / 4; const center = size / 2;
+    ctx.fillRect(center - thickness/2, 0, thickness, size);
+    ctx.fillRect(0, center - thickness/2, size, thickness);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.NearestFilter; 
+    return tex;
+}
+
 // ================= 4. 动画循环 =================
 function updateLogic() {
+    // 状态切换逻辑
     if (activePhotoIdx !== -1) {
         targetState = 'PHOTO';
     } else if (inputState.isFist) {
@@ -466,11 +454,19 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
     
+    // 【核心修复】 全局场景公转逻辑
+    // 如果没有查看特定照片，整个场景（包括树、粒子、星星）围绕Y轴持续旋转
     if (targetState !== 'PHOTO') {
-        const targetRotY = (inputState.x - 0.5) * 1.0;
+        // 1. 自动公转 (负数代表逆时针，正数顺时针，0.0025是速度)
+        scene.rotation.y -= 0.0025; 
+
+        // 2. 鼠标控制俯仰角 (X轴旋转)，保留这个为了方便查看树顶/树根
+        // 让鼠标位于屏幕中心时为0度
         const targetRotX = (inputState.y - 0.5) * 0.5;
-        scene.rotation.y += (targetRotY - scene.rotation.y) * 0.05;
         scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
+        
+        // 注意：移除了之前 inputState.x 控制 scene.rotation.y 的代码
+        // 现在鼠标左右移动不会改变旋转角度，而是让它自动转
     }
 
     particles.forEach(mesh => {
@@ -478,6 +474,7 @@ function updateLogic() {
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
         
+        // 粒子自转 (保持微小的 tumbling 效果，更有生气)
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
@@ -499,7 +496,7 @@ function updateLogic() {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
                 tPos.set(0, 0, CONFIG.camZ - 15); 
                 mesh.lookAt(camera.position); 
-                mesh.rotation.set(0,0,0);
+                mesh.rotation.set(0,0,0); 
                 tScale.multiplyScalar(inputState.zoomLevel); 
             } else {
                 tPos.copy(data.explodePos).multiplyScalar(2.0); 
