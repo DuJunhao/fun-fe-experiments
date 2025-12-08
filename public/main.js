@@ -189,11 +189,11 @@ function updateStatusText(text, color = "#fff") {
 function initThree() {
     // 【1. 清空旧画布】这行非常重要！
     const container = document.getElementById('canvas-container');
-    container.innerHTML = ''; 
+    container.innerHTML = '';
 
     particles = [];
     photos = [];
-    
+
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
     scene.fog = new THREE.FogExp2(0x000000, 0.001);
@@ -266,14 +266,14 @@ function createChristmasObjects() {
 
     const baseCount = CONFIG.particleCount - 150;
 
-    const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12); 
-    const starGeo = new THREE.OctahedronGeometry(1.8); 
+    const candyGeo = new THREE.CylinderGeometry(0.3, 0.3, 3.5, 12);
+    const starGeo = new THREE.OctahedronGeometry(1.8);
 
     // ==========================================
     // 修改开始：使用挤压几何体创建 3D 五角星
     // ==========================================
     // 1. 定义 2D 形状 (外径 5，内径 2.5)
-    const starShape = createStarShape(5, 2.5); 
+    const starShape = createStarShape(5, 2.5);
 
     // 2. 定义挤压设置 (厚度和倒角让它更好看)
     const extrudeSettings = {
@@ -287,7 +287,7 @@ function createChristmasObjects() {
 
     // 3. 生成 3D 几何体
     const topStarGeo = new THREE.ExtrudeGeometry(starShape, extrudeSettings);
-    
+
     // 4. 关键：将几何体中心移动到原点
     // 如果不执行这一步，星星旋转时会绕着其中一个角转，而不是绕中心转
     topStarGeo.center();
@@ -344,11 +344,11 @@ function createChristmasObjects() {
         particles.push(mesh);
     }
 
-   // ==========================================
+    // ==========================================
     // 2. 灯带 (Light Ribbon) - 材质增强版
     // ==========================================
     const ribbonPoints = [];
-    const ribbonSegments = 300; 
+    const ribbonSegments = 300;
     const ribbonTurns = 7;
     const bottomRadius = 55;
     const topRadius = 1;
@@ -366,19 +366,19 @@ function createChristmasObjects() {
     const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 8, false); // 半径改回1.2让它显眼点
 
     // 【修改点】：颜色改为超亮淡黄，确保 RGB 通道值足够高以触发 Bloom
-    const matGlowingRibbon = new THREE.MeshBasicMaterial({ 
+    const matGlowingRibbon = new THREE.MeshBasicMaterial({
         color: 0xFFFF88, // 越接近白色(FFFFCC)，发光越强；FFFF88 是强烈的亮黄光
         side: THREE.DoubleSide
     });
 
     const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
-    
+
     ribbonMesh.userData = {
         type: 'RIBBON',
         treePos: new THREE.Vector3(0, 0, 0),
-        explodePos: new THREE.Vector3(0, 0, 0), 
+        explodePos: new THREE.Vector3(0, 0, 0),
         baseScale: new THREE.Vector3(1, 1, 1),
-        rotSpeed: { x: 0, y: 0, z: 0 } 
+        rotSpeed: { x: 0, y: 0, z: 0 }
     };
 
     scene.add(ribbonMesh);
@@ -438,7 +438,7 @@ function initParticle(mesh, type, idx) {
     if (type === 'LEAF') radiusMod = 0.85;
 
     const angle = h * Math.PI * 25 + idx * 0.1;
-    
+
     // 【修改點 3】將 40 改為 36，讓整體分佈更緊湊
     // 原來是: const r = ((1.05 - h) * 40) * radiusMod;
     const r = ((1.05 - h) * 36) * radiusMod;
@@ -475,7 +475,7 @@ function createStarShape(outerRadius, innerRadius, points = 5) {
         const radius = (i % 2 === 0) ? outerRadius : innerRadius;
         // 减去 Math.PI / 2 是为了让星星的一个角初始朝上
         const angle = i * step - Math.PI / 2;
-        
+
         const x = Math.cos(angle) * radius;
         const y = Math.sin(angle) * radius;
 
@@ -555,7 +555,7 @@ function updateLogic() {
     // 2. 鼠标上下控制场景俯仰 (X轴)
     const targetRotX = (inputState.y - 0.5) * 0.5;
     scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
-    scene.rotation.y = 0; 
+    scene.rotation.y = 0;
 
     particles.forEach(mesh => {
         const data = mesh.userData;
@@ -567,9 +567,9 @@ function updateLogic() {
         // 目的：确保灯带在任何模式下都可见，且正确旋转
         // ===========================================
         if (data.type === 'RIBBON') {
-           // 位置始终居中
+            // 位置始终居中
             tPos.set(0, 0, 0);
-            
+
             // 【修改点】根据状态决定是否显示
             if (targetState === 'TREE') {
                 tScale.set(1, 1, 1); // 树模式：显示
@@ -585,7 +585,7 @@ function updateLogic() {
             mesh.scale.lerp(tScale, 0.08);
             return; // 跳过后续通用逻辑
         }
-        
+
         // ===========================================
         // 下面是普通粒子的通用逻辑
         // ===========================================
@@ -605,7 +605,7 @@ function updateLogic() {
             // 漂浮效果
             tPos.x += Math.sin(time * 0.5 + data.randomPhase) * 2;
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
-            
+
         } else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
                 // 选中照片逻辑在后面
@@ -667,7 +667,7 @@ async function initMediaPipeSafe() {
         // 2. 硬件检查：是否有视频输入设备
         const devices = await navigator.mediaDevices.enumerateDevices();
         const hasCamera = devices.some(device => device.kind === 'videoinput');
-        
+
         if (!hasCamera) {
             console.warn("No camera found.");
             enableMouseMode("MOUSE MODE (NO CAM)");
@@ -683,45 +683,48 @@ async function initMediaPipeSafe() {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
 
-                // 1. 移动控制 (保持不变)
+                // ================= 1. 平滑处理坐标 (消除移动抖动) =================
+                // 目标值 (Target)
+                const targetX = 1.0 - lm[9].x;
+                const targetY = lm[9].y;
+
+                // 平滑公式 (Lerp): 0.15 代表每一帧只移动 15% 的距离，大幅过滤抖动
+                smoothState.x += (targetX - smoothState.x) * 0.15;
+                smoothState.y += (targetY - smoothState.y) * 0.15;
+
+                // 赋值给全局输入状态
                 if (activePhotoIdx === -1) {
-                    inputState.x = 1.0 - lm[9].x;
-                    inputState.y = lm[9].y;
+                    inputState.x = smoothState.x;
+                    inputState.y = smoothState.y;
                 }
 
-                // ================== 修改开始 ==================
-
-                // 2. 计算握拳程度 (Fist)
-                // 计算 食指(8)、中指(12)、无名指(16)、小指(20) 到手腕(0) 的平均距离
+                // ================= 2. 握拳检测 (保持之前的逻辑) =================
                 const fingerTips = [8, 12, 16, 20];
                 let totalDist = 0;
                 fingerTips.forEach(i => {
                     totalDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y);
                 });
-                const avgFingerDist = totalDist / 4;
-                
-                // 判定是否握拳 (阈值保持 0.22)
-                const isFistDetected = avgFingerDist < 0.22;
+                const isFistDetected = (totalDist / 4) < 0.22;
 
-                // 3. 计算捏合程度 (Pinch)
-                // 计算 拇指(4) 到 食指(8) 的距离
-                const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                
-                // 判定是否捏合
-                // 核心修复逻辑：只有在 【满足捏合距离】 且 【没有检测到握拳】 时才算捏合
-                // 此外，为了防止误判，可以加一个辅助条件：中指(12)必须离手腕较远(伸直状态)
+                // ================= 3. 平滑处理捏合 (消除缩放颤抖) =================
+                // 目标捏合距离
+                const rawPinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+
+                // 【关键修复】对距离也进行平滑处理
+                // 如果变化很小，甚至可以忽略（死区），这里直接用平滑
+                smoothState.pinchDist += (rawPinchDist - smoothState.pinchDist) * 0.15;
+
+                // 辅助判断：中指伸直
                 const middleFingerDist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
-                const isMiddleFingerExtended = middleFingerDist > 0.25; // 中指伸直阈值
+                const isMiddleFingerExtended = middleFingerDist > 0.25;
 
-                // 最终捏合判定：距离近 + 不是握拳 + (可选:中指伸直)
-                const isPinchDetected = (pinchDist < 0.08) && !isFistDetected && isMiddleFingerExtended;
+                // 判定逻辑：使用“平滑后”的距离来计算是否捏合
+                const isPinchDetected = (smoothState.pinchDist < 0.08) && !isFistDetected && isMiddleFingerExtended;
 
-                // 4. 更新状态
                 inputState.isFist = isFistDetected;
                 inputState.isPinch = isPinchDetected;
 
-                // ================== 修改结束 ==================
-
+                // ================= 4. 状态响应 =================
                 if (inputState.isPinch) {
                     const now = Date.now();
                     if (activePhotoIdx === -1 && now - inputState.lastPinchTime > 500) {
@@ -730,7 +733,12 @@ async function initMediaPipeSafe() {
                         inputState.zoomLevel = 2.2;
                         updateStatusText("MEMORY UNLOCKED", "#00ffff");
                     }
-                    let scale = (pinchDist - 0.02) * 60.0;
+
+                    // 【关键】使用平滑后的 smoothState.pinchDist 参与计算
+                    // 这样算出来的 scale 就不会乱跳了
+                    let scale = (smoothState.pinchDist - 0.02) * 60.0;
+
+                    // 限制最大最小缩放
                     inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
                 } else {
                     if (activePhotoIdx !== -1) {
@@ -740,7 +748,6 @@ async function initMediaPipeSafe() {
                 }
             }
         });
-
         // 4. 启动摄像头 (增加 Try-Catch 包裹)
         const cam = new Camera(video, {
             onFrame: async () => { await hands.send({ image: video }); },
