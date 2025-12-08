@@ -678,21 +678,44 @@ async function initMediaPipeSafe() {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
 
-                // 移动控制
+                // 1. 移动控制 (保持不变)
                 if (activePhotoIdx === -1) {
                     inputState.x = 1.0 - lm[9].x;
                     inputState.y = lm[9].y;
                 }
 
-                // 握拳检测
-                const tips = [8, 12, 16, 20];
-                let avgDist = 0;
-                tips.forEach(i => avgDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y));
-                inputState.isFist = (avgDist / 4) < 0.22;
+                // ================== 修改开始 ==================
 
-                // 捏合检测
+                // 2. 计算握拳程度 (Fist)
+                // 计算 食指(8)、中指(12)、无名指(16)、小指(20) 到手腕(0) 的平均距离
+                const fingerTips = [8, 12, 16, 20];
+                let totalDist = 0;
+                fingerTips.forEach(i => {
+                    totalDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y);
+                });
+                const avgFingerDist = totalDist / 4;
+                
+                // 判定是否握拳 (阈值保持 0.22)
+                const isFistDetected = avgFingerDist < 0.22;
+
+                // 3. 计算捏合程度 (Pinch)
+                // 计算 拇指(4) 到 食指(8) 的距离
                 const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                inputState.isPinch = pinchDist < 0.08;
+                
+                // 判定是否捏合
+                // 核心修复逻辑：只有在 【满足捏合距离】 且 【没有检测到握拳】 时才算捏合
+                // 此外，为了防止误判，可以加一个辅助条件：中指(12)必须离手腕较远(伸直状态)
+                const middleFingerDist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
+                const isMiddleFingerExtended = middleFingerDist > 0.25; // 中指伸直阈值
+
+                // 最终捏合判定：距离近 + 不是握拳 + (可选:中指伸直)
+                const isPinchDetected = (pinchDist < 0.08) && !isFistDetected && isMiddleFingerExtended;
+
+                // 4. 更新状态
+                inputState.isFist = isFistDetected;
+                inputState.isPinch = isPinchDetected;
+
+                // ================== 修改结束 ==================
 
                 if (inputState.isPinch) {
                     const now = Date.now();
