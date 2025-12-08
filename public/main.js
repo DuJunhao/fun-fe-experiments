@@ -308,62 +308,61 @@ function createChristmasObjects() {
     }
 
     // 2. 灯带
-   const ribbonCount = 600; 
-    const ribbonGeo = new THREE.BoxGeometry(2.5, 0.4, 0.8); // 扁长方体模拟光带片段
-    // 使用高亮发光材质
-    const matRibbon = new THREE.MeshBasicMaterial({ 
-        color: 0xFFD700, // 金色
-    }); 
+   // --- A. 定义螺旋路径 ---
+const ribbonPoints = [];
+const ribbonSegments = 200; // 路径上的采样点数量，越多越平滑
+const ribbonTurns = 6.5;    // 缠绕圈数
+const bottomRadius = 50;    // 底部半径
+const topRadius = 2;        // 顶部半径
 
-    for(let i = 0; i < ribbonCount; i++) {
-        const mesh = new THREE.Mesh(ribbonGeo, matRibbon);
-        
-        // 标记类型为 RIBBON，稍后在动画中会用到这个标记来隐藏它
-        initParticle(mesh, 'RIBBON', i + 10000); 
+for (let i = 0; i <= ribbonSegments; i++) {
+    const progress = i / ribbonSegments;
+    // 角度随进度增加
+    const angle = progress * Math.PI * 2 * ribbonTurns;
+    // 高度从下到上
+    const y = (progress - 0.5) * CONFIG.treeHeight;
+    // 半径逐渐变小
+    const radius = THREE.MathUtils.lerp(bottomRadius, topRadius, progress);
+    
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    ribbonPoints.push(new THREE.Vector3(x, y, z));
+}
+// 创建一条平滑的 3D 曲线
+const spiralPath = new THREE.CatmullRomCurve3(ribbonPoints);
 
-        // --- 螺旋数学计算 ---
-        const progress = i / ribbonCount; 
-        
-        // 圈数：例如 6 圈 (6 * 2PI)
-        const angle = progress * Math.PI * 12; 
-        
-        // 高度：从下往上
-        const y = (progress - 0.5) * CONFIG.treeHeight; 
-        
-        // 半径：随着高度升高，半径变小 (圆锥形)
-        // 底部半径约 50，顶部半径约 2
-        const radius = (1.0 - progress) * 45 + 5; 
+// --- B. 创建几何体 ---
+// TubeGeometry 参数: 路径, 分段数(沿长度方向), 半径(粗细), 分段数(截面圆), 是否闭合
+// 这里的 600 是为了让管道非常光滑
+const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 12, false);
 
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
+// --- C. 创建发光材质 ---
+const matGlowingRibbon = new THREE.MeshStandardMaterial({
+    color: 0xFFD700,        // 基础金色
+    emissive: 0xFFD700,     // 自发光颜色（关键！）
+    emissiveIntensity: 3.0, // 发光强度，大于 1.0 才能产生强烈的辉光
+    roughness: 0.3,
+    metalness: 0.7,
+    side: THREE.DoubleSide  // 双面渲染，确保任何角度看都没问题
+});
 
-        // 设置树形态的目标位置
-        mesh.userData.treePos.set(x, y, z);
-        
-        // --- 关键：计算朝向让光带平滑 ---
-        // 计算下一个点的坐标，让当前粒子“看向”下一个点，形成连贯的带子
-        const nextProgress = (i + 1) / ribbonCount;
-        const nextAngle = nextProgress * Math.PI * 12;
-        const nextY = (nextProgress - 0.5) * CONFIG.treeHeight;
-        const nextRadius = (1.0 - nextProgress) * 45 + 5;
-        const nextPos = new THREE.Vector3(
-            Math.cos(nextAngle) * nextRadius, 
-            nextY, 
-            Math.sin(nextAngle) * nextRadius
-        );
-        
-        mesh.lookAt(nextPos);
-        
-        // 修正旋转，让扁平面朝外 (根据具体几何体轴向微调，这里通常不需要大改，或者转90度)
-        // BoxGeometry默认不需要额外旋转即可形成带状，如有扭曲可调整下方代码：
-        // mesh.rotateZ(Math.PI / 2); 
+// --- D. 创建单一网格并加入系统 ---
+// 现在整个光带是一个单独的 Mesh
+const ribbonMesh = new THREE.Mesh(tubeGeo, matGlowingRibbon);
 
-        // 存储计算好的旋转角度，以便在组成树的时候恢复
-        mesh.userData.treeRot = mesh.rotation.clone();
+// 设置初始状态和爆炸位置
+// 注意：treePos 设置为 (0,0,0)，因为几何体本身已经包含了形状
+ribbonMesh.userData = {
+    type: 'RIBBON',
+    treePos: new THREE.Vector3(0, 0, 0), 
+    // 爆炸时让整个带子飞到高空去
+    explodePos: new THREE.Vector3(0, CONFIG.treeHeight + 150, 0),
+    baseScale: new THREE.Vector3(1, 1, 1),
+    rotSpeed: {x:0.005, y:0.005, z:0} // 给一个缓慢的自转，让光泽流动
+};
 
-        scene.add(mesh);
-        particles.push(mesh);
-    }
+scene.add(ribbonMesh);
+particles.push(ribbonMesh);
 
     // 3. 树顶星星
     const topStarMesh = new THREE.Mesh(topStarGeo, matTopStar);
@@ -527,7 +526,13 @@ function updateLogic() {
             // 如果是光带，不需要上下浮动，也不需要自转，需要保持连贯
             if (data.type === 'RIBBON') {
                  // 恢复到初始计算的旋转角度，保证光带平滑
-                 if (data.treeRot) mesh.rotation.copy(data.treeRot);
+                if (targetState === 'TREE') {
+        // 在树形态下，保持原大
+        tScale.set(1, 1, 1);
+    } else {
+        // 在分散(EXPLODE) 或 照片(PHOTO) 模式下，直接隐藏
+        tScale.set(0, 0, 0);
+    }
             } else {
                  // 其他装饰物保持原有浮动效果
                  tPos.y += Math.sin(time*2 + data.randomPhase) * 1.0; 
