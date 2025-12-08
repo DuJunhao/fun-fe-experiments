@@ -33,6 +33,7 @@ let targetState = 'EXPLODE';
 let activePhotoIdx = -1;
 let imageList = []; 
 let isCameraMode = false;
+let globalRot = 0; // 新增：用于记录全局旋转角度
 
 const raycaster = new THREE.Raycaster();
 const mouseVector = new THREE.Vector2();
@@ -457,12 +458,16 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
     
-    // 全局场景公转逻辑 (非照片模式下)
-    if (targetState !== 'PHOTO') {
-        scene.rotation.y -= 0.0025; 
-        const targetRotX = (inputState.y - 0.5) * 0.5;
-        scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
-    }
+    // 1. 【修改点】降低公转速度 (0.0005 比之前的 0.0025 慢很多)
+    // 并且我们不再旋转整个 scene，而是累加这个角度，手动算粒子位置
+    globalRot -= 0.0005; 
+
+    // 2. 鼠标上下移动控制俯仰角 (X轴) 依然保留作用于 scene
+    const targetRotX = (inputState.y - 0.5) * 0.5;
+    scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
+    
+    // 确保 scene.rotation.y 归零，因为我们改为手动旋转粒子了
+    scene.rotation.y = 0; 
 
     particles.forEach(mesh => {
         const data = mesh.userData;
@@ -473,10 +478,7 @@ function updateLogic() {
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
-        if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
-             tScale.multiplyScalar(data.hoverScale);
-        }
-
+        // --- A. 计算“基准位置” (未旋转前的位置) ---
         if (targetState === 'TREE') {
             tPos.copy(data.treePos);
             tPos.y += Math.sin(time*2 + data.randomPhase) * 1.0; 
@@ -489,15 +491,38 @@ function updateLogic() {
         }
         else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                // 【修改这里】
-                // 之前是 CONFIG.camZ - 15 (太近)，改成 - 50 (稍微远一点，舒服)
-                tPos.set(0, 0, CONFIG.camZ - 50); 
-                
-                mesh.lookAt(camera.position); 
-                mesh.rotation.set(0,0,0); 
-                tScale.multiplyScalar(inputState.zoomLevel); 
+                // 被选中的照片：不用算基准位置，后面会直接覆盖
             } else {
+                // 其他背景粒子：位置扩散开，作为背景
                 tPos.copy(data.explodePos).multiplyScalar(2.0); 
+            }
+        }
+
+        // --- B. 应用公转 & 处理特殊状态 ---
+        
+        const isActivePhoto = (targetState === 'PHOTO' && data.type === 'PHOTO' && data.idx === activePhotoIdx);
+
+        if (isActivePhoto) {
+            // 【关键修改】如果是被点击的照片：
+            // 1. 不应用 globalRot (不公转)
+            // 2. 强制固定在相机正前方
+            tPos.set(0, 0, CONFIG.camZ - 50); 
+            
+            mesh.lookAt(camera.position); 
+            mesh.rotation.set(0, 0, 0); // 停止自转，正对屏幕
+            
+            // 鼠标悬停时的缩放单独处理
+            tScale.multiplyScalar(inputState.zoomLevel); 
+
+        } else {
+            // 【关键修改】如果是其他粒子（背景、树、未选中的照片）：
+            // 手动应用绕 Y 轴的公转
+            // 这样背景就会一直转，不会因为点击了照片而停止
+            tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
+            
+            // 处理鼠标悬停放大 (仅限未锁定模式)
+            if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
+                 tScale.multiplyScalar(data.hoverScale);
             }
         }
 
