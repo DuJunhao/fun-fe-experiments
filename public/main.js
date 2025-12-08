@@ -381,13 +381,13 @@ function createChristmasObjects() {
     // ==========================================
     const ribbonPoints = [];
     const ribbonSegments = 500; 
-    const ribbonTurns = 9;      // 圈数保持 9，缠绕紧密
+    const ribbonTurns = 8.5;      // 圈数保持 9，缠绕紧密
     
     // 底部参数保持优化后的数值
     const bottomRadius = 45;    
     const topRadius = 0.5;      
 
-    const yStart = -50; 
+    const yStart = -40; 
     const yEnd = 45;
 
     for (let i = 0; i <= ribbonSegments; i++) {
