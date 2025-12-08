@@ -593,7 +593,7 @@ function updateLogic() {
     scene.rotation.y = 0;
 
     particles.forEach(mesh => {
-        const data = mesh.userData;
+       const data = mesh.userData;
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
 
@@ -710,6 +710,7 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     composer.setSize(window.innerWidth, window.innerHeight);
 }
+
 
 
 // ================= 5. MediaPipe (增强版) =================
