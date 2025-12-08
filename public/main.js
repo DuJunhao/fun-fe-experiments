@@ -374,14 +374,10 @@ function createChristmasObjects() {
     const tubeGeo = new THREE.TubeGeometry(spiralPath, 600, 1.2, 12, false);
 
     // --- C. 创建发光材质 ---
-    const matGlowingRibbon = new THREE.MeshStandardMaterial({
-        color: 0xFFD700,        // 基础金色
-        emissive: 0xFFD700,     // 自发光颜色（关键！）
-        emissiveIntensity: 3.0, // 发光强度，大于 1.0 才能产生强烈的辉光
-        roughness: 0.3,
-        metalness: 0.7,
-        side: THREE.DoubleSide  // 双面渲染，确保任何角度看都没问题
-    });
+    const matGlowingRibbon = new THREE.MeshBasicMaterial({ 
+    color: 0xFFD700, 
+    side: THREE.DoubleSide 
+});
 
     // --- D. 创建单一网格并加入系统 ---
     // 现在整个光带是一个单独的 Mesh
@@ -601,7 +597,7 @@ function updateLogic() {
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
             
             // 爆炸模式下隐藏光带
-            if (data.type === 'RIBBON') tScale.set(0, 0, 0);
+            // if (data.type === 'RIBBON') tScale.set(0, 0, 0); <--- 保持这行被注释的状态
 
         } else if (targetState === 'PHOTO') {
             if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
@@ -610,7 +606,7 @@ function updateLogic() {
                 tPos.copy(data.explodePos).multiplyScalar(2.0);
             }
             // 照片模式下隐藏光带
-            if (data.type === 'RIBBON') tScale.set(0, 0, 0);
+            //if (data.type === 'RIBBON') tScale.set(0, 0, 0);
         }
 
         // --- B. 应用位置变换 ---
@@ -655,63 +651,63 @@ function onWindowResize() {
 }
 
 // ================= 5. MediaPipe =================
+// ================= 5. MediaPipe (增强版) =================
 async function initMediaPipeSafe() {
     const video = document.getElementById('input_video');
 
+    // 1. 核心检查：浏览器是否支持
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         enableMouseMode("MOUSE MODE (NO API)");
         return;
     }
-    
-    // ... (中间检查设备的代码保持不变，省略以节省空间) ...
-    // ... 如果你没有修改过中间的 catch，可以直接跳到下面 hands 部分 ...
 
     try {
+        // 2. 硬件检查：是否有视频输入设备
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const hasCamera = devices.some(device => device.kind === 'videoinput');
+        
+        if (!hasCamera) {
+            console.warn("No camera found.");
+            enableMouseMode("MOUSE MODE (NO CAM)");
+            return; // 直接退出，不再尝试启动
+        }
+
+        // 3. 初始化 Hand 模型
         const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6 });
 
         hands.onResults(results => {
             if (!isCameraMode) return;
-            
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
 
-                // 1. 移动控制
+                // 移动控制
                 if (activePhotoIdx === -1) {
                     inputState.x = 1.0 - lm[9].x;
                     inputState.y = lm[9].y;
                 }
 
-                // 2. 握拳检测
+                // 握拳检测
                 const tips = [8, 12, 16, 20];
                 let avgDist = 0;
                 tips.forEach(i => avgDist += Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y));
                 inputState.isFist = (avgDist / 4) < 0.22;
 
-                // 3. 捏合检测 (食指指尖8 和 拇指指尖4)
+                // 捏合检测
                 const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                inputState.isPinch = pinchDist < 0.08; // 判定距离
+                inputState.isPinch = pinchDist < 0.08;
 
                 if (inputState.isPinch) {
-                    // --- 捏合状态：选中或保持照片 ---
                     const now = Date.now();
-                    
-                    // 如果当前没照片，且冷却时间已过，随机选一张
                     if (activePhotoIdx === -1 && now - inputState.lastPinchTime > 500) {
                         activePhotoIdx = Math.floor(Math.random() * photos.length);
                         inputState.lastPinchTime = now;
-                        inputState.zoomLevel = 2.2; 
+                        inputState.zoomLevel = 2.2;
                         updateStatusText("MEMORY UNLOCKED", "#00ffff");
                     }
-                    
-                    // 缩放控制
                     let scale = (pinchDist - 0.02) * 60.0;
                     inputState.zoomLevel = Math.max(1.5, Math.min(8.0, scale));
-
                 } else {
-                    // --- 【新增关键逻辑】：松开状态 ---
-                    
-                    // 如果当前正显示照片，但手松开了 -> 立即关闭照片
                     if (activePhotoIdx !== -1) {
                         activePhotoIdx = -1;
                         updateStatusText("GALAXY MODE");
@@ -720,28 +716,29 @@ async function initMediaPipeSafe() {
             }
         });
 
+        // 4. 启动摄像头 (增加 Try-Catch 包裹)
         const cam = new Camera(video, {
             onFrame: async () => { await hands.send({ image: video }); },
             width: 640, height: 480
         });
 
-        cam.start().then(() => {
-            isCameraMode = true;
-            
-            // 【修改点B】这里必须更新文字，否则 UI 会一直卡在 "Initializing"
-            updateStatusText("GALAXY MODE"); 
-            
-            document.getElementById('hint-cam').classList.add('active');
-            document.getElementById('hint-mouse').classList.remove('active');
-            const loader = document.getElementById('loader');
-            if (loader) { loader.style.opacity = 0; setTimeout(() => loader.remove(), 500); }
-        }).catch(err => {
-            console.error(err);
-            enableMouseMode("MOUSE MODE (START FAIL)");
-        });
+        cam.start()
+            .then(() => {
+                isCameraMode = true;
+                updateStatusText("GALAXY MODE");
+                document.getElementById('hint-cam').classList.add('active');
+                document.getElementById('hint-mouse').classList.remove('active');
+                const loader = document.getElementById('loader');
+                if (loader) { loader.style.opacity = 0; setTimeout(() => loader.remove(), 500); }
+            })
+            .catch(err => {
+                // 捕获所有启动错误（包括 Device Not Found）
+                console.warn("Camera start failed:", err);
+                enableMouseMode("MOUSE MODE (START FAIL)");
+            });
 
     } catch (e) {
-        console.error(e);
+        console.error("MediaPipe Init Error:", e);
         enableMouseMode("MOUSE MODE (LIB FAIL)");
     }
 }
