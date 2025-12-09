@@ -27,6 +27,7 @@ const CONFIG = {
 
 // ================= 全局变量 =================
 let scene, camera, renderer, composer;
+let bloomPass; // <--- 【新增】这里必须声明，否则 updateLogic 找不到它！
 let particles = [];
 let photos = [];
 let targetState = 'EXPLODE';
@@ -258,10 +259,12 @@ function initThree() {
     scene.add(centerLight);
 
     const renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+    
     bloomPass.threshold = 0.25;
     bloomPass.strength = 1.0;
     bloomPass.radius = 0.7;
+    
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
