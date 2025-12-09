@@ -164,8 +164,7 @@ function onGlobalMouseDown(event) {
     if (targetPhoto) {
         // --- 【修改开始】---
         const photoIndex = targetPhoto.userData.idx;
-        selectPhoto(photoIndex); // <--- 调用新的 selectPhoto
-        // activePhotoIdx 已经在 selectPhoto 中设置，这里可以不用再设
+        selectPhoto(photoIndex);
         // activePhotoIdx = photoIndex; 
 
         inputState.mouseLockedPhoto = true; // 保持锁定状态
@@ -260,11 +259,11 @@ function initThree() {
 
     const renderPass = new RenderPass(scene, camera);
     bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    
+
     bloomPass.threshold = 0.25;
     bloomPass.strength = 1.0;
     bloomPass.radius = 0.7;
-    
+
     composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
@@ -508,17 +507,17 @@ function createChristmasObjects() {
     imageList.forEach((filename, i) => {
         const mat = new THREE.MeshBasicMaterial({ map: loadingTex, side: THREE.DoubleSide, toneMapped: false });
         const url = CONFIG.publicBaseUrl + filename;
-        
+
         textureLoader.load(
-            url, 
+            url,
             (tex) => {
                 tex.colorSpace = THREE.SRGBColorSpace;
                 mat.map = tex;
                 mat.needsUpdate = true;
                 textures[i] = tex; // 【重要】保存加载成功的纹理
-            }, 
-            undefined, 
-            () => { 
+            },
+            undefined,
+            () => {
                 mat.map = createTextTexture("LOAD FAILED");
                 textures[i] = mat.map; // 【重要】加载失败也要保存占位图，防止 selectPhoto 报错
             }
@@ -538,7 +537,7 @@ function createChristmasObjects() {
         particles.push(group);
         photos.push(group);
     });
-// ... (以下代码不变)
+    // ... (以下代码不变)
 
     // ==========================================
     // 8. 下雪特效 (保持不变)
@@ -674,35 +673,19 @@ function createCrossTexture(bgColorStr, crossColorStr) {
 
 function updateLogic() {
     // =========================================================
-    // 【核心修复】渲染器参数的暴力切换
+    // 渲染器参数切换 (保持之前的修复)
     // =========================================================
     if (activePhotoIdx !== -1) {
-        // === 模式 A: 看照片 ===
-        
-        // 1. 彻底关闭辉光通道 (比修改 strength 更彻底)
         if (typeof bloomPass !== 'undefined') bloomPass.enabled = false;
-        
-        // 2. 降低曝光度 (防止照片惨白)
-        // 如果当前曝光度很高(比如2.0)，强制降回 1.0 (标准显示器亮度)
-        if (renderer.toneMappingExposure > 1.01) {
-            renderer.toneMappingExposure = 1.0; 
-        }
-
+        if (renderer.toneMappingExposure > 1.01) renderer.toneMappingExposure = 1.0;
     } else {
-        // === 模式 B: 看树/爆炸 ===
-        
-        // 1. 开启辉光
         if (typeof bloomPass !== 'undefined') bloomPass.enabled = true;
-        
-        // 2. 恢复高曝光 (让星星和灯带看起来亮晶晶)
-        // 这里必须设置成和你 initThree 里一样的值 (你代码里是 2.0)
-        renderer.toneMappingExposure = 2.0; 
+        renderer.toneMappingExposure = 2.0;
     }
-    // =========================================================
 
+    // --- 运动逻辑 ---
 
-    // --- 下面是原本的运动逻辑 (保持不变) ---
-
+    // 状态判断
     if (activePhotoIdx !== -1) {
         targetState = 'PHOTO';
     } else if (inputState.isFist) {
@@ -721,20 +704,32 @@ function updateLogic() {
     scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
     scene.rotation.y = 0;
 
-    // 3. 独立大图 Mesh 的缩放与跟随
+    // ================= 【核心修改开始：大图飞入动画】 =================
     if (selectedPhotoMesh) {
-        selectedPhotoMesh.scale.setScalar(inputState.zoomLevel);
-        // 强制照片始终正对屏幕，不受场景旋转影响
-        selectedPhotoMesh.quaternion.copy(camera.quaternion);
-    }
+        // A. 设定目标位置 (相机正前方)
+        const targetPos = new THREE.Vector3(0, 0, CONFIG.camZ - 40);
 
-    // 4. 遍历粒子系统
+        // B. 平滑移动位置 (0.1 是速度，越小越慢)
+        selectedPhotoMesh.position.lerp(targetPos, 0.1);
+
+        // C. 平滑旋转 (让照片慢慢正对相机)
+        selectedPhotoMesh.quaternion.slerp(camera.quaternion, 0.1);
+
+        // D. 平滑缩放 (从当前大小 -> 目标 zoomLevel)
+        const currentScale = selectedPhotoMesh.scale.x;
+        const targetScale = inputState.zoomLevel;
+        // 使用简单的数值插值公式
+        const newScale = currentScale + (targetScale - currentScale) * 0.1;
+        selectedPhotoMesh.scale.setScalar(newScale);
+    }
+    // ================= 【核心修改结束】 =================
+
+    // 4. 遍历粒子系统 (保持不变)
     particles.forEach(mesh => {
         const data = mesh.userData;
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
 
-        // --- 特殊物体: 雪花 ---
         if (data.type === 'SNOW') {
             mesh.position.y -= data.fallSpeed;
             mesh.position.x += Math.sin(time + data.randomPhase) * data.driftSpeed;
@@ -747,9 +742,8 @@ function updateLogic() {
             return;
         }
 
-        // --- 特殊物体: 树顶星 ---
         if (data.type === 'TOP_STAR') {
-            mesh.rotation.y += 0.02; 
+            mesh.rotation.y += 0.02;
             mesh.rotation.x = 0.1;
             if (targetState === 'TREE') {
                 tPos.copy(data.treePos);
@@ -763,7 +757,6 @@ function updateLogic() {
             return;
         }
 
-        // --- 特殊物体: 灯带 ---
         if (data.type === 'RIBBON') {
             tPos.set(0, 0, 0);
             if (targetState === 'TREE') tScale.set(1, 1, 1);
@@ -774,7 +767,6 @@ function updateLogic() {
             return;
         }
 
-        // --- 普通粒子 ---
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
@@ -792,7 +784,7 @@ function updateLogic() {
                 if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
                     tScale.multiplyScalar(0.001); // 隐藏原来那个小图
                 } else {
-                    tPos.multiplyScalar(1.5); // 背景推远
+                    tPos.multiplyScalar(1.5);
                 }
             }
         }
@@ -803,12 +795,6 @@ function updateLogic() {
 
         if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
             tScale.multiplyScalar(data.hoverScale);
-        }
-
-        // 【视觉优化】看照片时，让背景粒子变暗一点，减少干扰 (可选)
-        if (targetState === 'PHOTO' && mesh.material && mesh.material.color) {
-             // 这一行会导致材质变暗，如果觉得背景太抢眼可以打开
-             // mesh.material.color.setHex(0x555555); 
         }
 
         mesh.position.lerp(tPos, 0.08);
@@ -829,7 +815,6 @@ function resetSelection() {
     }
 }
 
-// 【修改后的函数】创建和显示独立的 Mesh (原图模式)
 function selectPhoto(index) {
     resetSelection();
 
@@ -837,33 +822,38 @@ function selectPhoto(index) {
     if (!texture) {
         texture = loadingTex;
     } else {
-        // 【关键修复 1】告诉 Three.js 这是一张 sRGB 图片，不要把它当线性光处理
-        // 如果你的 Three.js 版本很旧（小于 r152），请用 texture.encoding = 3001;
-        texture.colorSpace = THREE.SRGBColorSpace; 
+        texture.colorSpace = THREE.SRGBColorSpace;
     }
 
     const geometry = new THREE.PlaneGeometry(9, 12);
-    
-    // 【关键修复 2】材质设置
+
     const material = new THREE.MeshBasicMaterial({
         map: texture,
         side: THREE.DoubleSide,
         color: 0xffffff,
-        
-        // 彻底关闭材质对光照的所有反应
-        toneMapped: false, 
-        fog: false,        
+        toneMapped: false,
+        fog: false,
     });
 
     selectedPhotoMesh = new THREE.Mesh(geometry, material);
     selectedPhotoMesh.userData = { type: 'BIG_PHOTO' };
 
-    // 放在相机正前方
-    selectedPhotoMesh.position.set(0, 0, CONFIG.camZ - 40); // 稍微拉近一点
-    selectedPhotoMesh.scale.setScalar(inputState.zoomLevel);
-    
-    // 【关键修复 3】让照片永远正对相机，防止角度倾斜导致反光感
-    selectedPhotoMesh.lookAt(camera.position);
+    // ================= 【核心修改开始】 =================
+    // 1. 找到原本那个小照片粒子对象
+    const originalParticle = photos[index];
+
+    // 2. 如果找得到，就把大图的初始位置、旋转，设置成和小图完全一样
+    if (originalParticle) {
+        selectedPhotoMesh.position.copy(originalParticle.position);
+        selectedPhotoMesh.quaternion.copy(originalParticle.quaternion);
+        // 初始大小设小一点，或者和原图差不多大，这样会有从小变大的效果
+        selectedPhotoMesh.scale.setScalar(originalParticle.scale.x);
+    } else {
+        // 如果万一没找到（容错），再用默认位置
+        selectedPhotoMesh.position.set(0, 0, 0);
+        selectedPhotoMesh.scale.setScalar(0.1);
+    }
+    // ================= 【核心修改结束】 =================
 
     scene.add(selectedPhotoMesh);
     activePhotoIdx = index;
@@ -980,10 +970,9 @@ async function initMediaPipeSafe() {
                     if (!selectedPhotoMesh && now - inputState.lastPinchTime > 500) { // <-- 检查 selectedPhotoMesh
 
                         const photoIndex = Math.floor(Math.random() * photos.length);
-                        selectPhoto(photoIndex); // <--- 调用 selectPhoto
+                        selectPhoto(photoIndex);
                         inputState.lastPinchTime = now;
                         inputState.zoomLevel = 2.2;
-                        // activePhotoIdx 已经在 selectPhoto 中设置
                         updateStatusText("MEMORY UNLOCKED", "#00ffff");
                     }
 
