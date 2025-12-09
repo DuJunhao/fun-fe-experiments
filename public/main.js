@@ -514,7 +514,7 @@ function createChristmasObjects() {
             mat.needsUpdate = true;
             textures[i] = tex; // 【修改点】保存纹理
         }, undefined, () => { mat.map = createTextTexture("LOAD FAILED"); });
-    }
+    });
 // ... (以下代码不变)
 
     // ==========================================
