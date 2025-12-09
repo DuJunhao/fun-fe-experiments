@@ -63,26 +63,37 @@ textureLoader.setCrossOrigin('anonymous');
 window.addEventListener('contextmenu', (e) => {
     e.preventDefault(); 
 }, { passive: false });
-// 获取元素
-const uiPanel = document.getElementById('ui-panel');
-const uiToggle = document.getElementById('ui-toggle');
+// ================= UI 交互逻辑 =================
+// 等待页面加载完成后执行
+window.addEventListener('DOMContentLoaded', () => {
+    
+    const uiPanel = document.getElementById('ui-panel');
+    const uiToggle = document.getElementById('ui-toggle');
 
-// 初始状态：如果是手机端，建议默认折叠，以免遮挡
-if (window.innerWidth < 768) {
-    uiPanel.classList.add('minimized');
-    uiToggle.innerText = '➕'; // 显示加号
-}
+    // 1. 确保元素存在，防止报错
+    if (uiPanel && uiToggle) {
+        
+        // 2. 绑定点击事件
+        uiToggle.addEventListener('click', (e) => {
+            console.log("按钮被点击了！"); // 用于调试
 
-// 点击按钮切换状态
-uiToggle.addEventListener('click', () => {
-    // 切换 class
-    uiPanel.classList.toggle('minimized');
+            // 【关键】阻止事件冒泡！
+            // 否则点击按钮会穿透下去，导致误触后面的 3D 场景
+            e.stopPropagation(); 
+            e.preventDefault();
 
-    // 改变按钮文字
-    if (uiPanel.classList.contains('minimized')) {
-        uiToggle.innerText = '➕'; // 折叠了，显示加号
+            // 切换 CSS 类名 'minimized'
+            uiPanel.classList.toggle('minimized');
+
+            // 根据状态切换图标 (+ 或 -)
+            if (uiPanel.classList.contains('minimized')) {
+                uiToggle.textContent = '➕';
+            } else {
+                uiToggle.textContent = '➖';
+            }
+        });
     } else {
-        uiToggle.innerText = '➖'; // 展开了，显示减号
+        console.error("找不到 UI 元素，请检查 HTML ID 是否为 ui-panel 和 ui-toggle");
     }
 });
 
