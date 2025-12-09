@@ -670,7 +670,16 @@ function createCrossTexture(bgColorStr, crossColorStr) {
 }
 
 function updateLogic() {
-    // 状态切换逻辑
+    // --- 【新增】动态控制辉光强度 ---
+    // 如果处于 PHOTO 模式 (看大图)，把辉光关掉 (strength -> 0)
+    // 否则恢复辉光 (strength -> 1.5，你可以根据你之前的设置调整这个 1.5)
+    if (typeof bloomPass !== 'undefined') {
+        const targetBloom = (activePhotoIdx !== -1) ? 0 : 1.5;
+        // 使用插值让变化平滑一点
+        bloomPass.strength += (targetBloom - bloomPass.strength) * 0.1;
+    }
+
+    // ---原有状态切换逻辑---
     if (activePhotoIdx !== -1) {
         targetState = 'PHOTO';
     } else if (inputState.isFist) {
@@ -692,7 +701,10 @@ function updateLogic() {
     // 3. 独立大图 Mesh 的缩放
     if (selectedPhotoMesh) {
         selectedPhotoMesh.scale.setScalar(inputState.zoomLevel);
-        selectedPhotoMesh.rotation.y = scene.rotation.y; // 稍微跟随相机旋转
+        
+        // 【建议】看图时强制锁定旋转，防止歪着看更看不清
+        selectedPhotoMesh.rotation.copy(camera.rotation); 
+        // 或者保留你之前的逻辑: selectedPhotoMesh.rotation.y = scene.rotation.y; 
     }
 
     // 4. 遍历粒子系统
@@ -701,9 +713,7 @@ function updateLogic() {
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
 
-        // --- 特殊物体直接处理并返回 ---
-        
-        // 雪花
+        // --- 特殊物体 ---
         if (data.type === 'SNOW') {
             mesh.position.y -= data.fallSpeed;
             mesh.position.x += Math.sin(time + data.randomPhase) * data.driftSpeed;
@@ -716,7 +726,6 @@ function updateLogic() {
             return;
         }
 
-        // 树顶星星
         if (data.type === 'TOP_STAR') {
             mesh.rotation.y += 0.02; 
             mesh.rotation.x = 0.1;
@@ -732,7 +741,6 @@ function updateLogic() {
             return;
         }
 
-        // 灯带
         if (data.type === 'RIBBON') {
             tPos.set(0, 0, 0);
             if (targetState === 'TREE') tScale.set(1, 1, 1);
@@ -743,46 +751,37 @@ function updateLogic() {
             return;
         }
 
-        // --- 普通粒子 (照片、装饰物) ---
-
-        // 自转
+        // --- 普通粒子 ---
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
-        // 位置计算
         if (targetState === 'TREE') {
             tPos.copy(data.treePos);
             tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0;
             if (data.type === 'PHOTO') tScale.multiplyScalar(0.6);
 
         } else {
-            // EXPLODE 或 PHOTO 模式的背景
             tPos.copy(data.explodePos);
             tPos.x += Math.sin(time * 0.5 + data.randomPhase) * 2;
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
 
             if (targetState === 'PHOTO') {
-                // 如果是被选中的那张小照片 -> 隐藏它 (因为有大图 Mesh 了)
                 if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                    tScale.multiplyScalar(0.001); 
+                    tScale.multiplyScalar(0.001); // 隐藏被选中的小图
                 } else {
-                    // 其他背景物体 -> 推远一点
-                    tPos.multiplyScalar(1.5);
+                    tPos.multiplyScalar(1.5); // 背景推远
                 }
             }
         }
 
-        // 旋转应用 (灯带除外)
         if (data.type !== 'RIBBON') {
             tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
         }
 
-        // 鼠标悬停 (仅在未锁定照片时)
         if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
             tScale.multiplyScalar(data.hoverScale);
         }
 
-        // 插值更新
         mesh.position.lerp(tPos, 0.08);
         mesh.scale.lerp(tScale, 0.08);
     });
@@ -801,7 +800,6 @@ function resetSelection() {
     }
 }
 
-// 【修改后的函数】创建和显示独立的 Mesh
 // 【修改后的函数】创建和显示独立的 Mesh (原图模式)
 function selectPhoto(index) {
     // 1. 清理旧的选中对象
