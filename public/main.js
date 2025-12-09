@@ -769,7 +769,7 @@ function updateLogic() {
             tPos.x += Math.sin(time * 0.5 + data.randomPhase) * 2;
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
 
-        } else (targetState === 'PHOTO' && data.type === 'PHOTO' && data.idx === activePhotoIdx) {
+        } else if(targetState === 'PHOTO' && data.type === 'PHOTO' && data.idx === activePhotoIdx){
             // 【关键修改】如果照片被选中，我们应该把它【缩小或隐藏】，
             // 因为现在大图由 selectedPhotoMesh 接管了。
             tPos.copy(data.explodePos).multiplyScalar(2.0); // 飞到很远
