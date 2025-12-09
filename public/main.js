@@ -216,41 +216,46 @@ function updateStatusText(text, color = "#fff") {
 }
 
 function initThree() {
-    console.log("正在初始化 initThree..."); // 【调试】确认函数进来了吗？
+    console.log("正在初始化 initThree...");
 
-    // 1. 移除旧监听 (防止重复)
+    // ===========================================
+    // 【修改核心】添加移动端兼容代码
+    // ===========================================
+    
+    // 1. 移除旧监听 (防止热重载时重复绑定)
     window.removeEventListener('mousedown', onGlobalMouseDown);
     window.removeEventListener('mousemove', onGlobalMouseMove);
     window.removeEventListener('mouseup', onGlobalMouseUp);
     
-    // --- A. PC端 鼠标事件 (保持不变) ---
+    // --- A. PC端 鼠标事件 (保持原样) ---
     window.addEventListener('mousedown', onGlobalMouseDown);
     window.addEventListener('mousemove', onGlobalMouseMove);
     window.addEventListener('mouseup', onGlobalMouseUp);
     window.addEventListener('wheel', onGlobalWheel);
     window.addEventListener('resize', onWindowResize);
     
-    // 彻底禁止右键菜单 (解决长按弹出菜单问题)
+    // 禁止右键菜单
     window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
 
-    // --- B. 移动端 触摸事件 (新增部分) ---
-    // 原理：把手指的坐标提取出来，伪装成鼠标事件传给你的 onGlobal 函数
-    
-    // 1. 手指按下 -> 触发 onGlobalMouseDown
+    // --- B. 移动端 触摸事件 (新增！) ---
+    // 原理：把手指触摸的坐标提取出来，伪装成鼠标事件，传给你写好的 onGlobal... 函数
+
+    // 1. 手指按下 -> 模拟 鼠标按下
     window.addEventListener('touchstart', (e) => {
-        e.preventDefault(); // 禁止浏览器缩放/滚动
+        e.preventDefault(); // 禁止浏览器默认滚动
         if (e.touches.length > 0) {
             // 构造一个假的鼠标事件对象
             const fakeEvent = {
                 clientX: e.touches[0].clientX,
                 clientY: e.touches[0].clientY,
+                button: 0, // 模拟左键
                 preventDefault: () => {} 
             };
             onGlobalMouseDown(fakeEvent);
         }
     }, { passive: false });
 
-    // 2. 手指移动 -> 触发 onGlobalMouseMove
+    // 2. 手指移动 -> 模拟 鼠标移动
     window.addEventListener('touchmove', (e) => {
         e.preventDefault();
         if (e.touches.length > 0) {
@@ -263,23 +268,26 @@ function initThree() {
         }
     }, { passive: false });
 
-    // 3. 手指抬起 -> 触发 onGlobalMouseUp
+    // 3. 手指抬起 -> 模拟 鼠标抬起
     window.addEventListener('touchend', (e) => {
-        // 抬起时不需要坐标，直接通知结束即可
+        // 抬起时不需要坐标
         const fakeEvent = { preventDefault: () => {} };
         onGlobalMouseUp(fakeEvent);
     }, { passive: false });
 
-    console.log("鼠标 & 触摸 监听器已挂载");
+    console.log("✅ 鼠标 & 触摸 监听器已挂载");
     // ===========================================
 
-    // 【1. 清空旧画布】
+    // ... 下面保持你原有的初始化代码不变 ...
+    
     const container = document.getElementById('canvas-container');
     container.innerHTML = '';
-
+    // ... (particles = [], photos = [], scene = new THREE.Scene()...)
+    // ... (一直到 animate())
+    
+    // 为了节省篇幅，下面这部分只写开头，请保留你原代码的内容
     particles = [];
     photos = [];
-
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
     scene.fog = new THREE.FogExp2(0x000000, 0.001);
@@ -304,7 +312,6 @@ function initThree() {
 
     const renderPass = new RenderPass(scene, camera);
     bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-
     bloomPass.threshold = 0.25;
     bloomPass.strength = 1.0;
     bloomPass.radius = 0.7;
@@ -313,7 +320,6 @@ function initThree() {
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
 
-    // 【注意检查】如果这里面的代码报错，后面就会停止运行
     try {
         createChristmasObjects();
         createMerryChristmas();
