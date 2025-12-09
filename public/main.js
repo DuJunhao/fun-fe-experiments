@@ -670,31 +670,36 @@ function createCrossTexture(bgColorStr, crossColorStr) {
 }
 
 function updateLogic() {
-    // --- 【新增】渲染器特效的暴力开关 ---
+    // =========================================================
+    // 【核心修复】渲染器参数的暴力切换
+    // =========================================================
     if (activePhotoIdx !== -1) {
-        // === 看照片模式 ===
+        // === 模式 A: 看照片 ===
         
-        // 1. 彻底关闭辉光（防止歌剧院发光看不清）
+        // 1. 彻底关闭辉光通道 (比修改 strength 更彻底)
         if (typeof bloomPass !== 'undefined') bloomPass.enabled = false;
         
-        // 2. 恢复标准曝光（防止照片过曝变白）
-        // 假设你平时为了让树发光，exposure 设为了 1.5 或 2.0，看图时要改回 1.0
+        // 2. 降低曝光度 (防止照片惨白)
+        // 如果当前曝光度很高(比如2.0)，强制降回 1.0 (标准显示器亮度)
         if (renderer.toneMappingExposure > 1.01) {
             renderer.toneMappingExposure = 1.0; 
         }
 
     } else {
-        // === 看树/爆炸模式 ===
+        // === 模式 B: 看树/爆炸 ===
         
         // 1. 开启辉光
         if (typeof bloomPass !== 'undefined') bloomPass.enabled = true;
         
-        // 2. 恢复高曝光（让星星和粒子看起来亮晶晶）
-        // 这里填你原来设置的数值，通常是 1.5 到 2.0
-        renderer.toneMappingExposure = 1.5; 
+        // 2. 恢复高曝光 (让星星和灯带看起来亮晶晶)
+        // 这里必须设置成和你 initThree 里一样的值 (你代码里是 2.0)
+        renderer.toneMappingExposure = 2.0; 
     }
+    // =========================================================
 
-    // --- 原有逻辑保持不变 ---
+
+    // --- 下面是原本的运动逻辑 (保持不变) ---
+
     if (activePhotoIdx !== -1) {
         targetState = 'PHOTO';
     } else if (inputState.isFist) {
@@ -704,46 +709,105 @@ function updateLogic() {
     }
 
     const time = Date.now() * 0.001;
+
+    // 1. 全局旋转
     globalRot -= 0.0005;
 
-    // 这里的粒子逻辑省略，保持你原有的代码即可...
-    // ...
-    
-    // 记得更新大图的位置和缩放
+    // 2. 鼠标控制俯仰
+    const targetRotX = (inputState.y - 0.5) * 0.5;
+    scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
+    scene.rotation.y = 0;
+
+    // 3. 独立大图 Mesh 的缩放与跟随
     if (selectedPhotoMesh) {
         selectedPhotoMesh.scale.setScalar(inputState.zoomLevel);
-        // 强制照片跟随相机旋转，就像贴在屏幕上一样
+        // 强制照片始终正对屏幕，不受场景旋转影响
         selectedPhotoMesh.quaternion.copy(camera.quaternion);
     }
-    
-    // ...后续粒子遍历代码保持不变
+
+    // 4. 遍历粒子系统
     particles.forEach(mesh => {
-        // ...你的粒子动画逻辑
         const data = mesh.userData;
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
-        // ... (保持原样)
-        
-        // 这里只要加上一段：如果在看照片，背景粒子变暗
-        if (targetState === 'PHOTO' && data.type !== 'BIG_PHOTO') {
-             // 这一步可选：让背景粒子变黑，突出照片
-             // mesh.material.color.setHex(0x333333); 
-        }
-        
-        // ...
-        
-        mesh.rotation.x += data.rotSpeed.x;
-        mesh.rotation.y += data.rotSpeed.y;
-        
-        if (targetState === 'TREE') {
-            tPos.copy(data.treePos);
-            // ...
-        } else {
-            tPos.copy(data.explodePos);
-            // ...
+
+        // --- 特殊物体: 雪花 ---
+        if (data.type === 'SNOW') {
+            mesh.position.y -= data.fallSpeed;
+            mesh.position.x += Math.sin(time + data.randomPhase) * data.driftSpeed;
+            mesh.lookAt(camera.position);
+            if (mesh.position.y < -150) {
+                mesh.position.y = 200;
+                mesh.position.x = (Math.random() - 0.5) * 300;
+                mesh.position.z = (Math.random() - 0.5) * 300;
+            }
+            return;
         }
 
-        // ...
+        // --- 特殊物体: 树顶星 ---
+        if (data.type === 'TOP_STAR') {
+            mesh.rotation.y += 0.02; 
+            mesh.rotation.x = 0.1;
+            if (targetState === 'TREE') {
+                tPos.copy(data.treePos);
+                tScale.set(1, 1, 1);
+            } else {
+                tPos.set(0, 0, 0);
+                tScale.set(1.5, 1.5, 1.5);
+            }
+            mesh.position.lerp(tPos, 0.08);
+            mesh.scale.lerp(tScale, 0.08);
+            return;
+        }
+
+        // --- 特殊物体: 灯带 ---
+        if (data.type === 'RIBBON') {
+            tPos.set(0, 0, 0);
+            if (targetState === 'TREE') tScale.set(1, 1, 1);
+            else tScale.set(0, 0, 0);
+            mesh.rotation.set(0, globalRot, 0);
+            mesh.position.lerp(tPos, 0.08);
+            mesh.scale.lerp(tScale, 0.08);
+            return;
+        }
+
+        // --- 普通粒子 ---
+        mesh.rotation.x += data.rotSpeed.x;
+        mesh.rotation.y += data.rotSpeed.y;
+
+        if (targetState === 'TREE') {
+            tPos.copy(data.treePos);
+            tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0;
+            if (data.type === 'PHOTO') tScale.multiplyScalar(0.6);
+
+        } else {
+            tPos.copy(data.explodePos);
+            tPos.x += Math.sin(time * 0.5 + data.randomPhase) * 2;
+            tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
+
+            if (targetState === 'PHOTO') {
+                if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
+                    tScale.multiplyScalar(0.001); // 隐藏原来那个小图
+                } else {
+                    tPos.multiplyScalar(1.5); // 背景推远
+                }
+            }
+        }
+
+        if (data.type !== 'RIBBON') {
+            tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
+        }
+
+        if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
+            tScale.multiplyScalar(data.hoverScale);
+        }
+
+        // 【视觉优化】看照片时，让背景粒子变暗一点，减少干扰 (可选)
+        if (targetState === 'PHOTO' && mesh.material && mesh.material.color) {
+             // 这一行会导致材质变暗，如果觉得背景太抢眼可以打开
+             // mesh.material.color.setHex(0x555555); 
+        }
+
         mesh.position.lerp(tPos, 0.08);
         mesh.scale.lerp(tScale, 0.08);
     });
