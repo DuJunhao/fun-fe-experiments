@@ -802,25 +802,34 @@ function resetSelection() {
 }
 
 // 【修改后的函数】创建和显示独立的 Mesh
+// 【修改后的函数】创建和显示独立的 Mesh (原图模式)
 function selectPhoto(index) {
-    // 1. 如果已经有一个 Mesh 了，先清理掉
+    // 1. 清理旧的选中对象
     resetSelection();
 
-    // 2. 获取纹理：如果照片还没加载完，就用 loadingTex 顶替，保证一定能显示出来！
+    // 2. 获取纹理 (如果没加载完显示 Loading)
     let texture = textures[index];
     if (!texture) {
         console.warn(`Texture ${index} not ready, using placeholder.`);
         texture = loadingTex;
     }
 
-    // 3. 基础几何体 (平面)
+    // 3. 基础几何体
     const geometry = new THREE.PlaneGeometry(9, 12);
 
-    // 4. 材质：使用 MeshBasicMaterial，不受光照影响，toneMapped: false 避免泛光变色
+    // 4. 材质配置 (关键修改)
     const material = new THREE.MeshBasicMaterial({
         map: texture,
         side: THREE.DoubleSide,
-        toneMapped: false 
+        
+        // --- 核心修复配置 ---
+        color: 0xffffff,       // 确保底色纯白
+        toneMapped: false,     // 关闭色调映射：防止照片被全局曝光设置弄得过亮或过暗
+        fog: false,            // 【关键】关闭雾效：防止照片被场景里的黑色雾气染黑
+        
+        // 注意：全局的辉光 (Bloom) 是后期特效，MeshBasicMaterial 无法完全避开。
+        // 如果照片依然觉得"发光"，是因为照片原本亮色的部分触发了辉光。
+        // 但加上 toneMapped: false 和 fog: false 后，清晰度应该已经非常接近原图了。
     });
 
     selectedPhotoMesh = new THREE.Mesh(geometry, material);
