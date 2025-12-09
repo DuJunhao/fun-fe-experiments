@@ -275,13 +275,18 @@ function initThree() {
 
     // 1. 手指按下 -> 模拟 鼠标按下
     window.addEventListener('touchstart', (e) => {
-        e.preventDefault(); // 禁止浏览器默认滚动
+        // 【关键修复】如果点的是 UI 面板或按钮，直接返回，允许触发点击
+        if (e.target.closest('#ui-panel') || e.target.closest('#ui-toggle')) {
+            return; 
+        }
+
+        e.preventDefault(); // 只有点在 3D 场景（Canvas）上时，才禁止默认滚动
+
         if (e.touches.length > 0) {
-            // 构造一个假的鼠标事件对象
             const fakeEvent = {
                 clientX: e.touches[0].clientX,
                 clientY: e.touches[0].clientY,
-                button: 0, // 模拟左键
+                button: 0,
                 preventDefault: () => {} 
             };
             onGlobalMouseDown(fakeEvent);
