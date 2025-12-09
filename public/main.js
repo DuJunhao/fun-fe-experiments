@@ -63,6 +63,28 @@ textureLoader.setCrossOrigin('anonymous');
 window.addEventListener('contextmenu', (e) => {
     e.preventDefault(); 
 }, { passive: false });
+// 获取元素
+const uiPanel = document.getElementById('ui-panel');
+const uiToggle = document.getElementById('ui-toggle');
+
+// 初始状态：如果是手机端，建议默认折叠，以免遮挡
+if (window.innerWidth < 768) {
+    uiPanel.classList.add('minimized');
+    uiToggle.innerText = '➕'; // 显示加号
+}
+
+// 点击按钮切换状态
+uiToggle.addEventListener('click', () => {
+    // 切换 class
+    uiPanel.classList.toggle('minimized');
+
+    // 改变按钮文字
+    if (uiPanel.classList.contains('minimized')) {
+        uiToggle.innerText = '➕'; // 折叠了，显示加号
+    } else {
+        uiToggle.innerText = '➖'; // 展开了，显示减号
+    }
+});
 
 // 占位图
 function createTextTexture(text) {
