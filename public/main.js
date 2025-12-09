@@ -497,23 +497,43 @@ function createChristmasObjects() {
     scene.add(topStarGroup);
     particles.push(topStarGroup);
 
-    // ==========================================
-    // 7. 照片卡片 (保持不变)
-    // ==========================================
+    // 7. 照片卡片
     const photoGeo = new THREE.PlaneGeometry(9, 12);
     const borderGeo = new THREE.BoxGeometry(9.6, 12.6, 0.2);
     const borderMat = new THREE.MeshStandardMaterial({ color: 0xdaa520, metalness: 0.6, roughness: 0.4 });
 
-    // ... (在 createChristmasObjects 函数中)
     imageList.forEach((filename, i) => {
         const mat = new THREE.MeshBasicMaterial({ map: loadingTex, side: THREE.DoubleSide, toneMapped: false });
         const url = CONFIG.publicBaseUrl + filename;
-        textureLoader.load(url, (tex) => {
-            tex.colorSpace = THREE.SRGBColorSpace;
-            mat.map = tex;
-            mat.needsUpdate = true;
-            textures[i] = tex; // 【修改点】保存纹理
-        }, undefined, () => { mat.map = createTextTexture("LOAD FAILED"); });
+        
+        textureLoader.load(
+            url, 
+            (tex) => {
+                tex.colorSpace = THREE.SRGBColorSpace;
+                mat.map = tex;
+                mat.needsUpdate = true;
+                textures[i] = tex; // 【重要】保存加载成功的纹理
+            }, 
+            undefined, 
+            () => { 
+                mat.map = createTextTexture("LOAD FAILED");
+                textures[i] = mat.map; // 【重要】加载失败也要保存占位图，防止 selectPhoto 报错
+            }
+        );
+
+        const photoMesh = new THREE.Mesh(photoGeo, mat);
+        photoMesh.position.z = 0.15;
+        const border = new THREE.Mesh(borderGeo, borderMat);
+        border.position.z = -0.15;
+
+        const group = new THREE.Group();
+        group.userData = { type: 'PHOTO', idx: i, hoverScale: 1.0 };
+        group.add(border); group.add(photoMesh);
+
+        initParticle(group, 'PHOTO', i);
+        scene.add(group);
+        particles.push(group);
+        photos.push(group);
     });
 // ... (以下代码不变)
 
@@ -661,30 +681,29 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
 
-    // 1. 全局旋转计算
+    // 1. 全局旋转
     globalRot -= 0.0005;
 
-    // 2. 鼠标上下控制场景俯仰 (X轴)
+    // 2. 鼠标控制俯仰
     const targetRotX = (inputState.y - 0.5) * 0.5;
     scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
     scene.rotation.y = 0;
 
-    // 3. 处理独立大图 Mesh 的缩放 (新增逻辑)
+    // 3. 独立大图 Mesh 的缩放
     if (selectedPhotoMesh) {
         selectedPhotoMesh.scale.setScalar(inputState.zoomLevel);
-        // 稍微跟随相机Y轴旋转，防止穿帮，保持面向屏幕
-        selectedPhotoMesh.rotation.y = scene.rotation.y;
+        selectedPhotoMesh.rotation.y = scene.rotation.y; // 稍微跟随相机旋转
     }
 
-    // 4. 遍历所有粒子
+    // 4. 遍历粒子系统
     particles.forEach(mesh => {
         const data = mesh.userData;
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
 
-        // --- 特殊物体处理 ---
+        // --- 特殊物体直接处理并返回 ---
         
-        // A. 雪花 (SNOW) - 保持原有逻辑
+        // 雪花
         if (data.type === 'SNOW') {
             mesh.position.y -= data.fallSpeed;
             mesh.position.x += Math.sin(time + data.randomPhase) * data.driftSpeed;
@@ -697,9 +716,9 @@ function updateLogic() {
             return;
         }
 
-        // B. 树顶星星 (TOP_STAR) - 保持原有逻辑
+        // 树顶星星
         if (data.type === 'TOP_STAR') {
-            mesh.rotation.y += 0.02;
+            mesh.rotation.y += 0.02; 
             mesh.rotation.x = 0.1;
             if (targetState === 'TREE') {
                 tPos.copy(data.treePos);
@@ -713,66 +732,57 @@ function updateLogic() {
             return;
         }
 
-        // C. 灯带 (RIBBON) - 保持原有逻辑
+        // 灯带
         if (data.type === 'RIBBON') {
             tPos.set(0, 0, 0);
-            if (targetState === 'TREE') {
-                tScale.set(1, 1, 1);
-            } else {
-                tScale.set(0, 0, 0);
-            }
+            if (targetState === 'TREE') tScale.set(1, 1, 1);
+            else tScale.set(0, 0, 0);
             mesh.rotation.set(0, globalRot, 0);
             mesh.position.lerp(tPos, 0.08);
             mesh.scale.lerp(tScale, 0.08);
             return;
         }
 
-        // --- 普通粒子通用逻辑 ---
+        // --- 普通粒子 (照片、装饰物) ---
 
         // 自转
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
-        // --- 核心位置计算 (修复了之前的 if/else 错误) ---
+        // 位置计算
         if (targetState === 'TREE') {
-            // 1. 树模式
             tPos.copy(data.treePos);
-            tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0; // 呼吸
-            if (data.type === 'PHOTO') tScale.multiplyScalar(0.6); // 照片在树上小一点
+            tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0;
+            if (data.type === 'PHOTO') tScale.multiplyScalar(0.6);
 
         } else {
-            // 2. 爆炸模式 或 照片模式的背景
-            // 先应用基础爆炸位置
+            // EXPLODE 或 PHOTO 模式的背景
             tPos.copy(data.explodePos);
-            // 漂浮动画
             tPos.x += Math.sin(time * 0.5 + data.randomPhase) * 2;
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
 
-            // 如果是【照片模式】，需要做额外处理
             if (targetState === 'PHOTO') {
-                // 如果是当前被选中的那张照片粒子 -> 隐藏它！(因为我们显示了独立的大图 Mesh)
+                // 如果是被选中的那张小照片 -> 隐藏它 (因为有大图 Mesh 了)
                 if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
-                    tScale.multiplyScalar(0.001); // 缩到极小看不见
+                    tScale.multiplyScalar(0.001); 
                 } else {
-                    // 其他背景物体 -> 推远一点，让出前景
-                    tPos.multiplyScalar(1.5); 
+                    // 其他背景物体 -> 推远一点
+                    tPos.multiplyScalar(1.5);
                 }
             }
         }
 
-        // --- 应用位置变换 ---
-        
-        // 只有非灯带物体才受全局旋转影响
+        // 旋转应用 (灯带除外)
         if (data.type !== 'RIBBON') {
             tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
         }
 
-        // 鼠标悬停放大逻辑 (仅在非照片模式下生效)
+        // 鼠标悬停 (仅在未锁定照片时)
         if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
             tScale.multiplyScalar(data.hoverScale);
         }
 
-        // --- 最终插值 ---
+        // 插值更新
         mesh.position.lerp(tPos, 0.08);
         mesh.scale.lerp(tScale, 0.08);
     });
@@ -791,36 +801,35 @@ function resetSelection() {
     }
 }
 
-// 【新增函数】创建和显示独立的 Mesh
+// 【修改后的函数】创建和显示独立的 Mesh
 function selectPhoto(index) {
     // 1. 如果已经有一个 Mesh 了，先清理掉
     resetSelection();
 
-    // 2. 只有在纹理加载完成后才能继续
-    const texture = textures[index];
+    // 2. 获取纹理：如果照片还没加载完，就用 loadingTex 顶替，保证一定能显示出来！
+    let texture = textures[index];
     if (!texture) {
-        console.warn(`Texture for index ${index} not yet loaded.`);
-        return;
+        console.warn(`Texture ${index} not ready, using placeholder.`);
+        texture = loadingTex;
     }
 
     // 3. 基础几何体 (平面)
     const geometry = new THREE.PlaneGeometry(9, 12);
 
-    // 4. 材质：使用 MeshBasicMaterial，它能展示贴图，且不受光照影响
+    // 4. 材质：使用 MeshBasicMaterial，不受光照影响，toneMapped: false 避免泛光变色
     const material = new THREE.MeshBasicMaterial({
         map: texture,
         side: THREE.DoubleSide,
-        // **关键**：禁用 toneMapping，避免被辉光效果影响 (MeshBasicMaterial 默认应该不受影响，但加上更保险)
-        toneMapped: false
+        toneMapped: false 
     });
 
     selectedPhotoMesh = new THREE.Mesh(geometry, material);
     selectedPhotoMesh.userData = { type: 'BIG_PHOTO' };
 
-    // 5. 初始位置：设置在相机前方 50 个单位处
+    // 5. 初始位置：设置在相机前方
     selectedPhotoMesh.position.set(0, 0, CONFIG.camZ - 50);
 
-    // 6. 初始缩放：基于全局缩放级别
+    // 6. 初始缩放
     selectedPhotoMesh.scale.setScalar(inputState.zoomLevel);
 
     scene.add(selectedPhotoMesh);
