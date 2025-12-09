@@ -1,4 +1,13 @@
 body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Arial', sans-serif; user-select: none; }
+
+/* 或者是你的 canvas id/class */
+canvas {
+    touch-action: none;  /* 禁止浏览器的默认滚动和缩放 */
+    user-select: none;   /* 禁止选中长按时的文本/元素 */
+    -webkit-user-select: none; /* Safari/Chrome 兼容 */
+    -webkit-touch-callout: none; /* 禁止长按弹出系统菜单 */
+}
+
 #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
 
 #ui-panel {

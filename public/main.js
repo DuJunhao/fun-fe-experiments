@@ -60,6 +60,9 @@ const inputState = {
 
 const textureLoader = new THREE.TextureLoader();
 textureLoader.setCrossOrigin('anonymous');
+window.addEventListener('contextmenu', (e) => {
+    e.preventDefault(); 
+}, { passive: false });
 
 // 占位图
 function createTextTexture(text) {
@@ -215,17 +218,59 @@ function updateStatusText(text, color = "#fff") {
 function initThree() {
     console.log("正在初始化 initThree..."); // 【调试】确认函数进来了吗？
 
-    // ===========================================
-    // 【修改】把监听器移到最前面！防止后面报错阻断
-    // ===========================================
-    window.removeEventListener('mousedown', onGlobalMouseDown); // 先移除旧的，防止重复
+    // 1. 移除旧监听 (防止重复)
+    window.removeEventListener('mousedown', onGlobalMouseDown);
+    window.removeEventListener('mousemove', onGlobalMouseMove);
+    window.removeEventListener('mouseup', onGlobalMouseUp);
+    
+    // --- A. PC端 鼠标事件 (保持不变) ---
     window.addEventListener('mousedown', onGlobalMouseDown);
     window.addEventListener('mousemove', onGlobalMouseMove);
     window.addEventListener('mouseup', onGlobalMouseUp);
     window.addEventListener('wheel', onGlobalWheel);
     window.addEventListener('resize', onWindowResize);
-    window.addEventListener('contextmenu', e => e.preventDefault());
-    console.log("鼠标监听器已挂载");
+    
+    // 彻底禁止右键菜单 (解决长按弹出菜单问题)
+    window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
+
+    // --- B. 移动端 触摸事件 (新增部分) ---
+    // 原理：把手指的坐标提取出来，伪装成鼠标事件传给你的 onGlobal 函数
+    
+    // 1. 手指按下 -> 触发 onGlobalMouseDown
+    window.addEventListener('touchstart', (e) => {
+        e.preventDefault(); // 禁止浏览器缩放/滚动
+        if (e.touches.length > 0) {
+            // 构造一个假的鼠标事件对象
+            const fakeEvent = {
+                clientX: e.touches[0].clientX,
+                clientY: e.touches[0].clientY,
+                preventDefault: () => {} 
+            };
+            onGlobalMouseDown(fakeEvent);
+        }
+    }, { passive: false });
+
+    // 2. 手指移动 -> 触发 onGlobalMouseMove
+    window.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (e.touches.length > 0) {
+            const fakeEvent = {
+                clientX: e.touches[0].clientX,
+                clientY: e.touches[0].clientY,
+                preventDefault: () => {}
+            };
+            onGlobalMouseMove(fakeEvent);
+        }
+    }, { passive: false });
+
+    // 3. 手指抬起 -> 触发 onGlobalMouseUp
+    window.addEventListener('touchend', (e) => {
+        // 抬起时不需要坐标，直接通知结束即可
+        const fakeEvent = { preventDefault: () => {} };
+        onGlobalMouseUp(fakeEvent);
+    }, { passive: false });
+
+    console.log("鼠标 & 触摸 监听器已挂载");
     // ===========================================
 
     // 【1. 清空旧画布】
