@@ -696,13 +696,21 @@ function updateLogic() {
 
     const time = Date.now() * 0.001;
 
-    // 1. 全局旋转
-    globalRot -= 0.0005;
+    // 1. 全局自动旋转 (保留或减慢)
+    globalRot -= 0.0005; 
 
-    // 2. 鼠标控制俯仰
+    // 2. 鼠标控制俯仰 (上下) - 保持不变
     const targetRotX = (inputState.y - 0.5) * 0.5;
     scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
-    scene.rotation.y = 0;
+
+    // 3. 【新增】鼠标控制水平旋转 (左右)
+    // (inputState.x - 0.5) 把 0~1 变成 -0.5~0.5
+    // * 1.0 是灵敏度，可以自己调
+    const targetRotY = (inputState.x - 0.5) * 1.0; 
+    
+    // 这一行替换掉原来的 scene.rotation.y = 0;
+    // 使用 += 插值让它平滑过渡，或者叠加在自动旋转 globalRot 上
+    scene.rotation.y += (targetRotY + globalRot - scene.rotation.y) * 0.05;
 
     // ================= 【核心修改开始：大图飞入动画】 =================
     if (selectedPhotoMesh) {
