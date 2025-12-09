@@ -669,133 +669,110 @@ function updateLogic() {
     scene.rotation.x += (targetRotX - scene.rotation.x) * 0.05;
     scene.rotation.y = 0;
 
+    // 3. 处理独立大图 Mesh 的缩放 (新增逻辑)
+    if (selectedPhotoMesh) {
+        selectedPhotoMesh.scale.setScalar(inputState.zoomLevel);
+        // 稍微跟随相机Y轴旋转，防止穿帮，保持面向屏幕
+        selectedPhotoMesh.rotation.y = scene.rotation.y;
+    }
+
+    // 4. 遍历所有粒子
     particles.forEach(mesh => {
         const data = mesh.userData;
         let tPos = new THREE.Vector3();
         let tScale = data.baseScale.clone();
 
-        // ================= 修改开始：添加雪花运动逻辑 =================
+        // --- 特殊物体处理 ---
+        
+        // A. 雪花 (SNOW) - 保持原有逻辑
         if (data.type === 'SNOW') {
-            // 1. 向下移动
             mesh.position.y -= data.fallSpeed;
-
-            // 2. 水平方向轻微摆动（模拟风吹）
             mesh.position.x += Math.sin(time + data.randomPhase) * data.driftSpeed;
-            // 确保雪花始终面向摄像机（对于 2D CircleGeometry 很有必要）
             mesh.lookAt(camera.position);
-
-            // 3. 循环机制：如果掉到屏幕下方，就回到顶部
-            // 这里的 -150 是一个大概的底部边界值
             if (mesh.position.y < -150) {
-                mesh.position.y = 200; // 回到顶部
-                // 重新随机水平位置，避免重复感
+                mesh.position.y = 200;
                 mesh.position.x = (Math.random() - 0.5) * 300;
                 mesh.position.z = (Math.random() - 0.5) * 300;
             }
-
-            // 雪花不需要插值，直接应用位置即可
-            // 直接 return，不执行后面的通用逻辑
             return;
         }
 
-        // ===========================================
-        // 2. 特殊处理：树顶五角星 (TOP_STAR)
-        // 【修改点】：让星星在爆炸模式下永远居中自转
-        // ===========================================
+        // B. 树顶星星 (TOP_STAR) - 保持原有逻辑
         if (data.type === 'TOP_STAR') {
-            // 始终自转 (绕Y轴)
             mesh.rotation.y += 0.02;
-            // 稍微带点X轴倾角，让星星看起来更有立体感，不至于是一条线
             mesh.rotation.x = 0.1;
-
             if (targetState === 'TREE') {
-                // 树模式：飞回树顶
                 tPos.copy(data.treePos);
                 tScale.set(1, 1, 1);
             } else {
-                // 爆炸/照片模式：强制居中
                 tPos.set(0, 0, 0);
-                // 可以稍微放大一点，让它像个核心
                 tScale.set(1.5, 1.5, 1.5);
             }
-
-            // 平滑插值
             mesh.position.lerp(tPos, 0.08);
             mesh.scale.lerp(tScale, 0.08);
-            return; // 跳过后续通用逻辑
+            return;
         }
 
-        // ===========================================
-        // 特殊处理：灯带 (RIBBON)
-        // 目的：确保灯带在任何模式下都可见，且正确旋转
-        // ===========================================
+        // C. 灯带 (RIBBON) - 保持原有逻辑
         if (data.type === 'RIBBON') {
-            // 位置始终居中
             tPos.set(0, 0, 0);
-
-            // 【修改点】根据状态决定是否显示
             if (targetState === 'TREE') {
-                tScale.set(1, 1, 1); // 树模式：显示
+                tScale.set(1, 1, 1);
             } else {
-                tScale.set(0, 0, 0); // 爆炸/照片模式：消失
+                tScale.set(0, 0, 0);
             }
-
-            // 保持自转
             mesh.rotation.set(0, globalRot, 0);
-
-            // 平滑过渡
             mesh.position.lerp(tPos, 0.08);
             mesh.scale.lerp(tScale, 0.08);
-            return; // 跳过后续通用逻辑
+            return;
         }
 
-        // ===========================================
-        // 下面是普通粒子的通用逻辑
-        // ===========================================
+        // --- 普通粒子通用逻辑 ---
 
-        // 默认自转
+        // 自转
         mesh.rotation.x += data.rotSpeed.x;
         mesh.rotation.y += data.rotSpeed.y;
 
+        // --- 核心位置计算 (修复了之前的 if/else 错误) ---
         if (targetState === 'TREE') {
+            // 1. 树模式
             tPos.copy(data.treePos);
-            // 呼吸效果
-            tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0;
-            if (data.type === 'PHOTO') tScale.multiplyScalar(0.6);
+            tPos.y += Math.sin(time * 2 + data.randomPhase) * 1.0; // 呼吸
+            if (data.type === 'PHOTO') tScale.multiplyScalar(0.6); // 照片在树上小一点
 
-        } else if (targetState === 'EXPLODE') {
+        } else {
+            // 2. 爆炸模式 或 照片模式的背景
+            // 先应用基础爆炸位置
             tPos.copy(data.explodePos);
-            // 漂浮效果
+            // 漂浮动画
             tPos.x += Math.sin(time * 0.5 + data.randomPhase) * 2;
             tPos.y += Math.cos(time * 0.5 + data.randomPhase) * 2;
 
-        } else if(targetState === 'PHOTO' && data.type === 'PHOTO' && data.idx === activePhotoIdx){
-            // 【关键修改】如果照片被选中，我们应该把它【缩小或隐藏】，
-            // 因为现在大图由 selectedPhotoMesh 接管了。
-            tPos.copy(data.explodePos).multiplyScalar(2.0); // 飞到很远
-            tScale.multiplyScalar(0.01); // 缩小到几乎看不见
-        }
-
-        // --- B. 应用位置变换 ---
-        const isActivePhoto = (targetState === 'PHOTO' && data.type === 'PHOTO' && data.idx === activePhotoIdx);
-
-        if (isActivePhoto) {
-            tPos.set(0, 0, CONFIG.camZ - 50);
-            mesh.lookAt(camera.position);
-            mesh.rotation.set(0, 0, 0);
-            tScale.multiplyScalar(inputState.zoomLevel);
-        } else {
-            // 普通物体应用公转
-            if (data.type !== 'RIBBON') {
-                tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
-            }
-
-            if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
-                tScale.multiplyScalar(data.hoverScale);
+            // 如果是【照片模式】，需要做额外处理
+            if (targetState === 'PHOTO') {
+                // 如果是当前被选中的那张照片粒子 -> 隐藏它！(因为我们显示了独立的大图 Mesh)
+                if (data.type === 'PHOTO' && data.idx === activePhotoIdx) {
+                    tScale.multiplyScalar(0.001); // 缩到极小看不见
+                } else {
+                    // 其他背景物体 -> 推远一点，让出前景
+                    tPos.multiplyScalar(1.5); 
+                }
             }
         }
 
-        // --- C. 平滑插值 ---
+        // --- 应用位置变换 ---
+        
+        // 只有非灯带物体才受全局旋转影响
+        if (data.type !== 'RIBBON') {
+            tPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), globalRot);
+        }
+
+        // 鼠标悬停放大逻辑 (仅在非照片模式下生效)
+        if (data.type === 'PHOTO' && targetState !== 'PHOTO') {
+            tScale.multiplyScalar(data.hoverScale);
+        }
+
+        // --- 最终插值 ---
         mesh.position.lerp(tPos, 0.08);
         mesh.scale.lerp(tScale, 0.08);
     });
